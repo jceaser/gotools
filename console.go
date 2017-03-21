@@ -51,19 +51,17 @@ func getHeight() uint {
 func main() {
     //args := os.Args
     
-    lineMode := flag.Bool("line", true, "line mode, trim each line")
-    edgeMode := flag.Bool("edge", false, "edge mode, trim just edges")
-    allMode := flag.Bool("all", false, "all mode, trim everything")
+    bothMode := flag.Bool("both", true, "display both width and height")
+    heightMode := flag.Bool("height", false, "height mode")
+    widthMode := flag.Bool("width", false, "width mode")
     
     flag.Parse()
     
-    str := "text"
-    
-    if *lineMode {
-        fmt.Printf("%dx%d", getWidth(), getHeight())
-    } else if *edgeMode {//only first and last
-        fmt.Printf("%s", str)
-    } else if *allMode {
-        fmt.Printf("%s", str)
+    if *bothMode {
+        fmt.Printf("%dx%d\n", getWidth(), getHeight())
+    } else if *heightMode {//only first and last
+        fmt.Printf("%d\n", getHeight())
+    } else if *widthMode {
+        fmt.Printf("%d\n", getWidth())
     }
 }

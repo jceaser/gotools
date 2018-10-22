@@ -247,7 +247,7 @@ func main() {
             buf.WriteString(Scale(*floor, f, *ceil))
 
             var width, _ = get_term_size(uintptr(syscall.Stdout)) //limit buffer to this size
-            var buf_count = strings.Count(buf.String(), "")
+            var buf_count = strings.Count(buf.String(), "") - 1
             if (buf_count>=width) {
                 var hold_it string = buf.String()[buf_count-width:]
                 buf.Reset()

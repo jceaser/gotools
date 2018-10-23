@@ -226,7 +226,7 @@ func main() {
     var floor *float64 = flag.Float64("floor", 0.0, "lowest possible value, assume 0.0")
     var dynamic = flag.Bool("dynamic", true, "Adjust the floor and ceiling dynamically")
     var dump = *flag.Bool("dump", false, "Don't use terminal esc sequences")
-    var wait = *flag.Int("wait", 2000, "delay between reads in milliseconds")
+    var wait = flag.Int("wait", 2000, "delay between reads in milliseconds")
     
     flag.Parse()
     
@@ -297,7 +297,7 @@ func main() {
             //reset back to first line
             if (!dump) {
                 fmt.Printf("\n\033[3A")
-                time.Sleep( time.Duration(wait) * time.Millisecond)
+                time.Sleep( time.Duration(*wait) * time.Millisecond)
             }
         }
     }

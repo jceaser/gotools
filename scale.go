@@ -8,6 +8,7 @@ import ("os"
     "math"
     "strconv"
     "strings"
+    "os/signal"
     "syscall"
     "time"
     "unsafe"
@@ -207,14 +208,26 @@ func getWidth() uint {
 }
 
 func main() {
-    //var up = flag.Int("up", -1, "count up time.")
-    //var done = flag.String("done", "", "output when done")
+    
+    //trap control - c
+    c := make(chan os.Signal)
+    signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+    go func() {
+        <-c
+        fmt.Printf("\033[2K\r") //clear line and move back to beginning
+        fmt.Printf("\n\033[2K\r") //clear line and move back to beginning
+        fmt.Printf("\n\033[2K\r") //clear line and move back to beginning
 
+        os.Exit(0)
+    }()
+
+    
     var ceil *float64 = flag.Float64("ceil", 1.0, "highest possible value, assume 1.0")
     var floor *float64 = flag.Float64("floor", 0.0, "lowest possible value, assume 0.0")
-    
     var dynamic = flag.Bool("dynamic", true, "Adjust the floor and ceiling dynamically")
-
+    var dump = *flag.Bool("dump", false, "Don't use terminal esc sequences")
+    var wait = *flag.Int("wait", 2000, "delay between reads in milliseconds")
+    
     flag.Parse()
     
     /*if 0==flag.NFlag() || *help {
@@ -225,38 +238,72 @@ func main() {
     
     scanner := bufio.NewScanner(os.Stdin)
     var buf bytes.Buffer
-    
+    var avg_sum float64 = 0.0
+    var avg_count int = 0
+    var avg float64 = 0.0
+
     for scanner.Scan() {
         var raw = scanner.Text()
         var list = strings.Split(raw, " ")
         
         for _, item := range list {
             f, _ := strconv.ParseFloat(item, 64)
+            avg_sum += f
+            avg_count++
+            avg = avg_sum / float64(avg_count)
             if (*dynamic) {
                 if f<*floor {
-                    buf.WriteString(string(RuneDArrow))
+                    //buf.WriteString("\\033[31m")
+                    buf.WriteRune(RuneDArrow)
+                    //buf.WriteString("\\033[0m")
                     *floor = f
                 }
                 if *ceil<f {
-                    buf.WriteString(string(RuneUArrow))
+                    buf.WriteRune(RuneUArrow)
                     *ceil = f
                 }
             }
-            //Print("\033[0J")  //clear from curser down
-            //Print("\033[1D")  //move back one
             buf.WriteString(Scale(*floor, f, *ceil))
-
-            var width, _ = get_term_size(uintptr(syscall.Stdout)) //limit buffer to this size
-            var buf_count = strings.Count(buf.String(), "") - 1
+            
+            //limit buffer to this size
+            var width, _ = get_term_size(uintptr(syscall.Stdout))
+            var buf_count = strings.Count(buf.String(), "") + 0
             if (buf_count>=width) {
                 var hold_it string = buf.String()[buf_count-width:]
                 buf.Reset()
                 buf.WriteString(hold_it)
             }
-            fmt.Printf("\033[2K\r") //clear line and move back to beginning
+            
+            /******************************************************/
+            
+            //print first line
+            if (!dump) {
+                fmt.Printf("\033[2K\r") //clear line and move back to beginning
+            }
             fmt.Printf(buf.String())
-            time.Sleep(500 * time.Millisecond)
+            
+            //print second line
+            if (!dump) {
+                fmt.Printf("\n\033[2K\r")
+                fmt.Printf("floor: %f, avg: %f, ceil: %f", *floor, avg, *ceil)
+            }
+
+            //print third line
+            if (!dump) {
+                fmt.Printf("\n\033[2K\r")
+                fmt.Printf("w=%d, c=%d", buf_count, avg_count)
+            }
+            
+            //reset back to first line
+            if (!dump) {
+                fmt.Printf("\n\033[3A")
+                time.Sleep( time.Duration(wait) * time.Millisecond)
+            }
         }
     }
-    fmt.Printf("\nDone: %f %f \n", *floor, *ceil)
+    if (dump) {
+        fmt.Printf("\nfloor: %f, avg: %f, ceil: %f", *floor, avg, *ceil)
+    } else {
+        fmt.Printf("\n\n\n")
+    }
 }

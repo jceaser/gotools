@@ -64,15 +64,7 @@ func run(n int, c chan string) {
 /****/
 
 
-func main() {
-    //args := os.Args
-    
-    for i:=0 ; i<36; i++ {
-        fmt.Printf("%d = %s\n", i, letter(int64(i)))
-    }
-    
-    //fmt.Println("\033[5;5HHello\n")
-    
+func main() {    
     bothMode := flag.Bool("both", true, "display both width and height")
     heightMode := flag.Bool("height", false, "height mode")
     widthMode := flag.Bool("width", false, "width mode")

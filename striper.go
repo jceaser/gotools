@@ -55,7 +55,8 @@ func main() {
     
     lineMode := flag.Bool("line", false, "line mode, trim each line")
     edgeMode := flag.Bool("edge", false, "edge mode, trim just edges")
-    allMode := flag.Bool("all", false, "all mode, trim everything")
+    //allMode := flag.Bool("all", false, "all mode, trim everything")
+    //otherMode := flag.Bool("other", false, "other mode, TBD")
     
     flag.Parse()
     
@@ -65,10 +66,10 @@ func main() {
     } else if *edgeMode {//only first and last
         str := ReadLines(os.Stdin, pass)
         fmt.Printf("%s", string(bytes.TrimSpace([]byte(str))))
-    } else if *otherMode {
+    } /*else if *otherMode {
         str := ReadLines(os.Stdin, all)
         fmt.Printf("%s", string(bytes.TrimSpace([]byte(str))))
-    }
+    }*/
 }
 
 func pass(line string) string{return line}

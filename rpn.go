@@ -59,12 +59,21 @@ var memory = make(map[string]float64)
 func main() {
     //args := os.Args
     
-    formula := flag.String("formula", "false", "math formula in RPN format")
+    formula := flag.String("formula", "print", "math formula in RPN format")
+    useStream := flag.Bool("stream", false, "use input stream")
     interactive := flag.Bool("interactive", false, "interactive mode")
     verbose := flag.Bool("verbose", false, "verbose")
     
     flag.Parse()
     
+    if *useStream {
+        scanner := bufio.NewScanner(os.Stdin)
+        for scanner.Scan() {
+	        a := fmt.Sprintf("%s %s", scanner.Text(), *formula)
+            formula = &a
+        }
+    }
+
     if *interactive {
         str := ReadLines(os.Stdin, Filter)
         fmt.Printf("%s", str)

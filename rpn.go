@@ -54,6 +54,9 @@ func ReadLines(reader io.Reader, foo func(string) string) string {
 }
 
 var stack []float64
+var mainstack []float64
+var altstack []float64
+
 var memory = make(map[string]float64)
 
 func main() {
@@ -66,47 +69,70 @@ func main() {
     
     flag.Parse()
     
-    if *useStream {
+    stat, _ := os.Stdin.Stat()
+    if *useStream || ( (stat.Mode() & os.ModeCharDevice) == 0 ) {
         scanner := bufio.NewScanner(os.Stdin)
         for scanner.Scan() {
-	        a := fmt.Sprintf("%s %s", scanner.Text(), *formula)
+            a := fmt.Sprintf("%s %s", scanner.Text(), *formula)
             formula = &a
         }
     }
+    
+    //stack = &mainstack
 
     if *interactive {
-        str := ReadLines(os.Stdin, Filter)
-        fmt.Printf("%s", str)
+        fmt.Print("Enter text: ")
+        for {
+            fmt.Printf(">")
+            var input string
+            
+            //fmt.Scanf("%q", &input)
+            scanner := bufio.NewScanner(os.Stdin)
+            if scanner.Scan() {input = scanner.Text()}
+
+            //fmt.Printf("\n%s\n", input)
+            //fmt.Printf("\n")
+            
+
+            input = strings.Trim(input, " ")
+            ProcessLine(input, *verbose)
+        }
     } else  {
-        for _, segment:= range strings.Split(*formula, " ") {
-            cmd := segment
-            muliplyer := 1
-            if strings.Contains(cmd, ":") {
-                cmd_parts := strings.Split(cmd, ":")
-                //if len(cmd_parts)==2 {
-                    raw_action := cmd_parts[0]
-                    raw_multiplyer := cmd_parts[1]
-                    times, err := strconv.Atoi(raw_multiplyer)
-                    if err!=nil { times = 1; }
-                    if 0<times {
-                        muliplyer = times
-                        cmd = raw_action
-                    }
-                //}
-            }
-            for i := 0; i< muliplyer ; i++ {
-                Action(cmd, verbose)
-            }
+        ProcessLine(*formula, *verbose)
+    }
+}
+
+func ProcessLine(formula string, verbose bool) {
+    for _, segment:= range strings.Split(formula, " ") {
+        cmd := segment
+        muliplyer := 1
+        if strings.Contains(cmd, ":") {
+            cmd_parts := strings.Split(cmd, ":")
+            //if len(cmd_parts)==2 {
+                raw_action := cmd_parts[0]
+                raw_multiplyer := cmd_parts[1]
+                times, err := strconv.Atoi(raw_multiplyer)
+                if err!=nil { times = 1; }
+                if 0<times {
+                    muliplyer = times
+                    cmd = raw_action
+                }
+            //}
+        }
+        for i := 0; i< muliplyer ; i++ {
+            Action(cmd, verbose)
         }
     }
 }
 
-func Action (segment string, verbose *bool) {
+func Action (segment string, verbose bool) {
     value, err := strconv.ParseFloat(segment, 64)
     if err==nil {
         Push(value)
     } else {
         switch segment {
+            case "quit": os.Exit(0)
+
             case "+": Plus()
             case "-": Minus()
             case "*": Times()
@@ -124,6 +150,7 @@ func Action (segment string, verbose *bool) {
             case "<>": Swap()
             case "<<": RotateLeft()
             case ">>": RotateRight()
+            case "swap": SwapStacks()
 
             case "?<": IfLess()
             case "?>": IfOver()
@@ -140,7 +167,7 @@ func Action (segment string, verbose *bool) {
                 fmt.Printf("%s is an unknown command", segment)
         }
     }
-    if *verbose {
+    if verbose {
         fmt.Printf("%v\n", stack)
     }
 
@@ -264,6 +291,16 @@ func Swap() {
 
 /*****/
 /* singletons */
+
+func SwapStacks() {
+    /*if &stack == &mainstack {
+        stack = altstack
+        fmt.Printf("switch to alt %p\n", stack);
+    } else {
+        fmt.Printf("switch to main %p\n", stack);
+        stack = mainstack
+    }*/
+}
 
 func SquareRoot() {
     base := Pop()

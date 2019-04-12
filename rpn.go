@@ -11,6 +11,7 @@ import ("fmt"
     "syscall"
     "unsafe"
     "strings"
+    "os/exec"
     )
 
 /****/
@@ -81,17 +82,25 @@ func main() {
     //stack = &mainstack
 
     if *interactive {
+
+        exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
+        exec.Command("stty", "-F", "/dev/tty", "-echo").Run()
+        //var b []byte = make([]byte, 1)
+
         fmt.Print("Enter text: ")
         for {
             fmt.Printf(">")
             var input string
-            
+            input = ReadFormula()
             //fmt.Scanf("%q", &input)
-            scanner := bufio.NewScanner(os.Stdin)
-            if scanner.Scan() {input = scanner.Text()}
+            //os.Stdin.Read(b)
+            //fmt.Printf(string(b))
+            //scanner := bufio.NewScanner(os.Stdin)
+            //if scanner.Scan() {input = scanner.Text()}
 
             //fmt.Printf("\n%s\n", input)
             //fmt.Printf("\n")
+            
             
 
             input = strings.Trim(input, " ")
@@ -101,6 +110,85 @@ func main() {
         ProcessLine(*formula, *verbose)
     }
 }
+
+func ReadFormula() string {
+    /*var b []byte = make([]byte, 1)*/
+
+    fmt.Print("Enter text: ")
+    for {
+        fmt.Printf(">")
+        var input string
+        var ascii int
+        //var keyCode int
+        //var err error
+        getChar(ascii /*, keyCode, err*/)
+        //fmt.Scanf("%q", &input)
+        fmt.Printf(string(ascii))
+        fmt.Printf(input)
+    }
+}
+
+func getChar(ascii int) {
+    reader := bufio.NewReader(os.Stdin)
+    // ...
+    ch, _, err := reader.ReadRune()
+    fmt.Printf(string(ch))
+    if err != nil {
+        fmt.Println("Error reading key...", err)
+    }
+}
+
+func _getChar(ascii int) {
+    exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
+    exec.Command("stty", "-F", "/dev/tty", "-echo").Run()
+    defer exec.Command("stty", "-F", "/dev/tty", "echo").Run()
+    
+    var b []byte = make([]byte, 1)
+    for {
+        os.Stdin.Read(b)
+        fmt.Println("got the byte ", b, " ("+string(b)+")")
+        ascii = 20
+    }
+}
+/*
+func getChar(ascii int, keyCode int, err error) {
+	t, _ := term.Open("/dev/tty")
+	term.RawMode(t)
+	bytes := make([]byte, 3)
+
+	var numRead int
+	numRead, err = t.Read(bytes)
+	if err != nil {
+		return
+	}
+	if numRead == 3 && bytes[0] == 27 && bytes[1] == 91 {
+		// Three-character control sequence, beginning with "ESC-[".
+
+		// Since there are no ASCII codes for arrow keys, we use
+		// Javascript key codes.
+		if bytes[2] == 65 {
+			// Up
+			keyCode = 38
+		} else if bytes[2] == 66 {
+			// Down
+			keyCode = 40
+		} else if bytes[2] == 67 {
+			// Right
+			keyCode = 39
+		} else if bytes[2] == 68 {
+			// Left
+			keyCode = 37
+		}
+	} else if numRead == 1 {
+		ascii = int(bytes[0])
+	} else {
+		// Two characters read??
+	}
+	t.Restore()
+	t.Close()
+	return
+}
+*/
 
 func ProcessLine(formula string, verbose bool) {
     for _, segment:= range strings.Split(formula, " ") {

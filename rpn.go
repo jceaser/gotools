@@ -28,7 +28,8 @@ type func_data struct {
 var (
     history_fn = filepath.Join(os.TempDir(), ".rpn_history")
     names      = []string{"print", "dump", "quit"}
-
+    
+    which_stack int
     stack []float64
     mainstack []float64
     altstack []float64
@@ -85,23 +86,35 @@ func a(key string, foo func(), doc string) {
 }
 
 func InitializeActions() {
+    a("euler", E, "Decimal expansion of e - Euler's number")
+    a("pi", Pi, "Decimal expansion of Pi (or, digits of Pi)")
+    a("ln", Ln2, "Decimal expansion of the natural logarithm of 2")
+    a("ln10", Ln10, "Decimal expansion of natural logarithm of 10")
+
     // unary actions
     a("drop", Drop, "Remove the top item from the stack")
     a("--", Decrement, "subtract one from the top of the stack")
     a("++", Increment, "add one to the top of the stack")
     a("^2", Square, "square the item at the top of the stack")
     a("rand", Random, "Generates a random number from 0-1")
-    
+    a("integer", Truncate, "Return the integer part of the number")
+    a("decimal", Exponent, "Return the decimal part of the number");
+    a("!", Factorial, "")
+
     // binary actions
+    a("&", And, "AND values")
+    a("|", Or, "OR values")
     a("+", Plus, "add two numbers")
     a("-", Minus, "subtract two numbers")
     a("*", Times, "multiply two numbers")
+    a("\\", ReverseDivide, "divide two numbers, but reversed")
     a("/", Divide, "divide two numbers")
     a("%", Remainder, "divide two numbers return only the remainder")
     a("^", Power, "take the power of two numbers first^second")
     a("min", Min, "return the smaller of two numbers")
     a("max", Max, "return the larger of two numbers")
     a("<>", Swap, "swap the top two stack items")
+    a("<->", Swap, "swap the top two stack items")
 
     // ternary actions
     a("?<", IfLess, "if s[2]<0 then s[1] else s[0], consumes all three")
@@ -112,8 +125,8 @@ func InitializeActions() {
     a(">>", RotateRight, "shift stack up, wrapping")
     a("avg", Average, "Take the average of the entire stack")
     a("stddev", StandardDeviation, "Take the standard deviation of the stack")
-    a("sort", Sort, "")
-    a("med", Median, "")
+    a("sort", Sort, "sort the stack")
+    a("med", Median, "find the medium value on the stack")
     a("clear", Clear, "Empty the stack")
 
     //other actions
@@ -139,6 +152,8 @@ func main() {
     interactive := flag.Bool("interactive", false,
         "interactive mode using a readline style interface")
     verbose := flag.Bool("verbose", false, "verbose")
+    final_pop := flag.Bool("pop", false,
+        "output a final pop")
     
     flag.Parse()
 
@@ -152,13 +167,19 @@ func main() {
         }
     }
     
-    //stack = &mainstack
+    mainstack = []float64{}
+    altstack = []float64{}
+    stack = mainstack
+    which_stack = 1
 
     if *interactive {
         InteractiveAdvance(line, verbose)
         //InteractiveBasic()
     } else  {
         ProcessLine(*formula, *verbose)
+    }
+    if *final_pop {
+        fmt.Println(Pop())
     }
 }
 
@@ -320,17 +341,19 @@ func Empty() bool {
 }
 
 func Push(value float64) {
-    stack = append(stack, value)
+    if !math.IsNaN(value) {
+        stack = append(stack, value)
+    }
 }
 
 func Pop() float64 {
     l := len(stack)
     if l < 1 {
         fmt.Printf("stack is empty %d\n", len(stack))
-        return 0.0
+        return math.NaN()
     }
     n := l - 1
-    value := 0.0
+    value := math.NaN()
     value, stack = stack[n], stack[:n]
     return value
 }
@@ -417,6 +440,21 @@ func IfOver() {
 /**************************************/
 // #mark - binary operators
 
+func And() {
+    right := Pop()
+    left := Pop()
+    Push(float64(int(left)&int(right)))
+}
+func Or() {
+    right := Pop()
+    left := Pop()
+    Push(float64(int(left)|int(right)))
+}
+func Xor() {
+    right := Pop()
+    left := Pop()
+    Push(float64(int(left)^int(right)))
+}
 func Plus() {
     right := Pop()
     left := Pop()
@@ -435,6 +473,11 @@ func Times() {
 func Divide() {
     right := Pop()
     left := Pop()
+    Push(left/right)
+}
+func ReverseDivide() {
+    left := Pop()
+    right := Pop()
     Push(left/right)
 }
 func Power() {
@@ -470,13 +513,15 @@ func Swap() {
 // #mark - unary operators
 
 func SwapStacks() {
-    /*if &stack == &mainstack {
-        stack = altstack
-        fmt.Printf("switch to alt %p\n", stack);
+    if which_stack == 1 {//on main, switch to alt
+        mainstack = append ([]float64{}, stack...)
+        stack = append ([]float64{}, altstack...)
+        which_stack = 2
     } else {
-        fmt.Printf("switch to main %p\n", stack);
-        stack = mainstack
-    }*/
+        altstack = append ([]float64{}, stack...)
+        stack = append ([]float64{}, mainstack...)
+        which_stack = 1
+    }
 }
 
 func Drop() {
@@ -512,6 +557,28 @@ func Decrement() {
 func Random() {
     Push(rand.Float64())
 }
+
+func Truncate() {
+    Push(math.Trunc(Pop()))
+}
+
+func Exponent() {
+    _, exp := math.Modf(Pop())
+    Push(exp)
+}
+
+func Factorial(){
+    ans:=1.0
+    for i:=math.Floor(Pop()); i>0; i-- {
+        ans = ans * i
+    }
+    Push(ans)
+}
+
+func E() {Push(math.E)}
+func Pi() {Push(math.Pi)}
+func Ln2() {Push(math.Ln2)}
+func Ln10() {Push(math.Ln10)}
 
 /**************************************/
 /* full stack operators */

@@ -27,7 +27,7 @@ var (
     names      = []string{"print", "dump", "quit"}
     
     active_stack int
-    stack [1][]float64
+    stack [2][]float64
 
     memory = make(map[string]float64)
 
@@ -510,6 +510,11 @@ func Swap() {
 
 /**************************************/
 // #mark - unary operators
+
+func AddStack() {
+    //stack[active_stack] = append(stack[active_stack], value)
+    //append(stack, []float64{})
+}
 
 func SwapStacks() {
     if active_stack < len(stack)-1 {

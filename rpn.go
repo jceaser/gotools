@@ -3,8 +3,6 @@ package main
 import ("fmt"
     "bufio"
     "os"
-    //"io"
-    //"bytes"
     "flag"
     "math"
     "math/rand"
@@ -13,7 +11,6 @@ import ("fmt"
     "syscall"
     "unsafe"
     "strings"
-    //"os/exec"
     "path/filepath"
     "github.com/peterh/liner"
     )
@@ -29,10 +26,8 @@ var (
     history_fn = filepath.Join(os.TempDir(), ".rpn_history")
     names      = []string{"print", "dump", "quit"}
     
-    which_stack int
-    stack []float64
-    mainstack []float64
-    altstack []float64
+    active_stack int
+    stack [1][]float64
 
     memory = make(map[string]float64)
 
@@ -85,6 +80,10 @@ func a(key string, foo func(), doc string) {
     actions[key] = func_data{cmd:foo, doc:doc}
 }
 
+func InitializeStack() {
+    active_stack = 0
+    stack[active_stack] = []float64{}
+}
 func InitializeActions() {
     a("euler", E, "Decimal expansion of e - Euler's number")
     a("pi", Pi, "Decimal expansion of Pi (or, digits of Pi)")
@@ -139,6 +138,7 @@ func InitializeActions() {
 }
 
 func main() {
+    InitializeStack()
     InitializeActions()
 
     //readline setup
@@ -166,11 +166,6 @@ func main() {
             formula = &a
         }
     }
-    
-    mainstack = []float64{}
-    altstack = []float64{}
-    stack = mainstack
-    which_stack = 1
 
     if *interactive {
         InteractiveAdvance(line, verbose)
@@ -332,46 +327,50 @@ func Dump() {
 
 // stack functions
 
+func ActiveStack() []float64 {
+    return stack[active_stack]
+}
+
 func Items() bool {
-    return len(stack)>0
+    return len(stack[active_stack])>0
 }
 
 func Empty() bool {
-    return len(stack)<1
+    return len(stack[active_stack])<1
 }
 
 func Push(value float64) {
     if !math.IsNaN(value) {
-        stack = append(stack, value)
+        stack[active_stack] = append(stack[active_stack], value)
     }
 }
 
 func Pop() float64 {
-    l := len(stack)
+    l := len(stack[active_stack])
     if l < 1 {
-        fmt.Printf("stack is empty %d\n", len(stack))
+        fmt.Printf("stack is empty %d\n", len(stack[active_stack]))
         return math.NaN()
     }
     n := l - 1
     value := math.NaN()
-    value, stack = stack[n], stack[:n]
+    value, stack[active_stack] = stack[active_stack][n], stack[active_stack][:n]
     return value
 }
 
 func Peek() float64 {
     n := len(stack)-1
-    return stack[n]
+    return stack[active_stack][n]
 }
 
 func PopQueue() float64 {
-    value := stack[0]
-    stack = stack[1:]
+    value := stack[active_stack][0]
+    stack[active_stack] = stack[active_stack][1:]
     return value
 }
 
 // print functions
 func Print() {
-    fmt.Printf("(%v)\n", stack)
+    fmt.Printf("(%v)\n", stack[active_stack])
 }
 
 func Help() {
@@ -513,14 +512,10 @@ func Swap() {
 // #mark - unary operators
 
 func SwapStacks() {
-    if which_stack == 1 {//on main, switch to alt
-        mainstack = append ([]float64{}, stack...)
-        stack = append ([]float64{}, altstack...)
-        which_stack = 2
+    if active_stack < len(stack)-1 {
+        active_stack++
     } else {
-        altstack = append ([]float64{}, stack...)
-        stack = append ([]float64{}, mainstack...)
-        which_stack = 1
+        active_stack = 0
     }
 }
 
@@ -585,7 +580,7 @@ func Ln10() {Push(math.Ln10)}
 
 /** clear the stack ; empty the stack */
 func Clear() {
-    stack = []float64{}
+    stack[active_stack] = []float64{}
 }
 
 /** Rotate the stack by taking off the end and putting at the beginning */
@@ -599,7 +594,7 @@ func RotateLeft() {
 func RotateRight() {
     //  >>  take off beginning and put at end
     value := Pop()
-    stack = append([]float64{value}, stack...)
+    stack[active_stack] = append([]float64{value}, stack[active_stack]...)
 }
 
 /** Average the entire stack */
@@ -620,15 +615,15 @@ func Average() {
 */
 func StandardDeviation() {
     var sum, mean, sd float64 = 0, 0, 0
-    count_i := len(stack)
+    count_i := len(stack[active_stack])
     count_f := float64(count_i)
 
     for i:=0 ; i<count_i; i++ {
-        sum += stack[i]
+        sum += stack[active_stack][i]
     }
     mean = sum / count_f
     for i:=0 ; i<count_i; i++ {
-        sd += math.Pow( stack[i]-mean, 2)
+        sd += math.Pow( stack[active_stack][i]-mean, 2)
     }
     sd = math.Sqrt( sd / count_f)
     Clear()
@@ -636,7 +631,7 @@ func StandardDeviation() {
 }
 
 func Sort() {
-    sort.Float64s(stack)
+    sort.Float64s(stack[active_stack])
 }
 
 /**
@@ -649,11 +644,11 @@ func Sort() {
 func Median() {
     Sort()
     med := 0.0
-    count := len(stack)/2
+    count := len(stack[active_stack])/2
     if count % 2 == 0 {//odd use case
-        med = stack[count]
+        med = stack[active_stack][count]
     } else {//even use case
-        med = ( stack[count] + stack[count-1] ) / 2
+        med = ( stack[active_stack][count] + stack[active_stack][count-1] ) / 2
     }
     Clear()
     Push(med)

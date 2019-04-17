@@ -11,12 +11,12 @@ import (
 
 /******************************************************************************/
 
-/*func TestVprintf(*testing.T) {
-    app_data.verbose = false
-    vprintf("")
-}*/
+func init() {
+    InitializeStack()
+}
 
 func TestExists(*testing.T) {
+    Clear()
     /*result := exists("rpn.go")
     if result != true {
         t.Error("Expected to find rpn.go, got ", result)
@@ -24,13 +24,16 @@ func TestExists(*testing.T) {
 }
 
 func TestPush(t *testing.T) {
+    Clear()
     Push(3.14)
-    if stack[0] != 3.14 {
+    if stack[0][0] != 3.14 {
         t.Errorf("Push did not work")
     }
+    Clear()
 }
 
 func TestPop(t *testing.T) {
+    Clear()
     Push(3.14)
     ans := Pop()
     if ans != 3.14 {
@@ -38,28 +41,39 @@ func TestPop(t *testing.T) {
     }
 }
 
+/**
+>3 5 9 1 8 6 58 9 4 10 med print
+([7])
+>clear
+>3 5 9 1 8 6 58 9 4 med print
+([6])
+*/
 func TestMed(t *testing.T) {
     //odd use case
-    Push(3) ; Push(5) ; Push(9) ; Push(8) ; Push(6)
-    Push(58) ; Push(9) ; Push(4) ; Push(10)
+    Clear()
+    Push(3) ; Push(5) ; Push(9) ; Push(1) ; Push(8)
+    Push(6) ; Push(58) ; Push(9) ; Push(4) ; Push(10)
     Median()
     ans := Pop()
-    if ans != 7.0 {
-        t.Errorf("Off number of item use case did not work")
+    expected := 7.0
+    if ans != expected {
+        t.Errorf("Odd number of item use case did not work, %f!=%f", ans, expected)
    }
 
     //even case
-    Push(3) ; Push(5) ; Push(9) ; Push(8) ; Push(6)
-    Push(58) ; Push(9) ; Push(4)
+    Clear()
+    Push(3) ; Push(5) ; Push(9) ; Push(1) ; Push(8)
+    Push(6) ; Push(58) ; Push(9) ; Push(4)
     Median()
     ans = Pop()
-    if ans != 8.0 {
+    if ans != 6.0 {
         t.Errorf("Even number of item use case did not work: %f!=8.0", ans)
    }
 }
 
 func TestStandardDeviation(t *testing.T) {
     //even case
+    Clear()
     Push(3) ; Push(5) ; Push(9) ; Push(1) ; Push(8) ; Push(6) ; Push(58)
     Push(9) ; Push(4) ; Push(10)
     StandardDeviation()
@@ -71,6 +85,7 @@ func TestStandardDeviation(t *testing.T) {
 }
 
 func TestFact(t *testing.T) {
+    Clear()
     Push(5.9)
     Factorial()
     ans := Pop()
@@ -81,18 +96,15 @@ func TestFact(t *testing.T) {
 }
 
 func TestSum(t *testing.T) {
+    Clear()
     Push(2.0)
     Push(3.0)
     Plus()
     ans := Pop()
-    if ans!=5.0 {
-       t.Errorf("Sum was incorrect, got: %f, want: %f.", ans, 5.0)
+    expected := 5.0
+    if ans!=expected {
+       t.Errorf("Sum was incorrect, got: %f, want: %f.", ans, expected)
     }
-
-    /*total := Sum(5, 5)
-    if total != 10 {
-       t.Errorf("Sum was incorrect, got: %d, want: %d.", total, 10)
-    }*/
 }
 
 func TestProcessLine(t *testing.T) {
@@ -132,6 +144,7 @@ func TestProcessLine_Bad(t *testing.T) {
 }
 
 func pline(t *testing.T, formula string, expected float64, msg string) {
+    Clear()
     ProcessLine(formula, false)
     ans := Pop()
     Clear()

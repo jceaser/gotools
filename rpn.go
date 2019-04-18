@@ -17,17 +17,20 @@ import ("fmt"
 
 /****/
 
+/*
+Function Data holds the function to call and it's description
+*/
 type func_data struct {
     cmd func()
     doc string
 }
 
 var (
-    history_fn = filepath.Join(os.TempDir(), ".rpn_history")
-    names      = []string{"print", "dump", "quit"}
+    history_fn = filepath.Join(os.TempDir(), ".rpn_history")    //used by liner
+    names      = []string{"print", "dump", "quit"}              //used by liner
     
     active_stack int
-    stack [2][]float64
+    stack [][]float64
 
     memory = make(map[string]float64)
 
@@ -82,8 +85,10 @@ func a(key string, foo func(), doc string) {
 
 func InitializeStack() {
     active_stack = 0
-    stack[active_stack] = []float64{}
+    item := [][]float64{{}}
+    stack = append(stack, item...)
 }
+
 func InitializeActions() {
     a("euler", E, "Decimal expansion of e - Euler's number")
     a("pi", Pi, "Decimal expansion of Pi (or, digits of Pi)")
@@ -129,7 +134,11 @@ func InitializeActions() {
     a("clear", Clear, "Empty the stack")
 
     //other actions
-    a("swap", SwapStacks, "not implimented yet")
+    a("sswap", SwapStacks, "swap stacks")
+    a("sprint", PrintStacks, "print all stacks")
+    a("sprinti", PrintStacksInfo, "Print stack info")
+    a("sadd", AddStack, "add a stack")
+
     a("quit", Exit, "Quit application, same as exit")
     a("exit", Exit, "Quit application, same as quit")
     a("help", Help, "Display a help document")
@@ -312,8 +321,19 @@ func Action (segment string, verbose bool) {
 
 // memory functions
 
+func cleanKey(raw string) string {
+    var ans string
+        cleaner := strings.ToLower(strings.Trim(raw, " "))
+        ans = cleaner
+    return ans
+}
+
+/**
+Recall a value from memory to the stack
+@param key value name
+*/
 func MemoryLoad (key string) {//recall value
-    var value = memory[key]     
+    var value = memory[key]
     Push(value)
 }
 
@@ -327,8 +347,14 @@ func Dump() {
 
 // stack functions
 
-func ActiveStack() []float64 {
+func ActiveStack(params ...[]float64) []float64 {
     return stack[active_stack]
+}
+
+func ActiveStackUpdate(params ...[]float64) {
+    if params!=nil && len(params)>0 && params[0]!=nil {
+        stack[active_stack] = params[0]
+    }
 }
 
 func Items() bool {
@@ -342,13 +368,14 @@ func Empty() bool {
 func Push(value float64) {
     if !math.IsNaN(value) {
         stack[active_stack] = append(stack[active_stack], value)
+        //ActiveStackUpdate(append(ActiveStack(), value))
     }
 }
 
 func Pop() float64 {
     l := len(stack[active_stack])
     if l < 1 {
-        fmt.Printf("stack is empty %d\n", len(stack[active_stack]))
+        fmt.Printf("stack is empty %d\n", l)
         return math.NaN()
     }
     n := l - 1
@@ -370,13 +397,13 @@ func PopQueue() float64 {
 
 // print functions
 func Print() {
-    fmt.Printf("(%v)\n", stack[active_stack])
+    fmt.Printf("%v\n", stack[active_stack])
 }
 
 func Help() {
     fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
     
-f := "%15s : %-8s %s\n"
+    f := "%15s : %-8s %s\n"
     fmt.Printf(f, "Flag", "Category", "Description")
     fmt.Printf(f, "----", "--------", "-----------")
     fmt.Printf(f, "--formula", "Input", "Accept formulas from standard in")
@@ -403,6 +430,29 @@ f := "%15s : %-8s %s\n"
     fmt.Printf("%s\n", "a~z will store values (push)")
     fmt.Printf("%s\n", "A~Z will recall values (pop)")
     fmt.Printf("%s\n", "action:count will call action 'count' times : `+:3`")
+}
+
+func AddStack() {
+    item := [][]float64{{}}
+    stack = append(stack, item...)
+}
+
+func SwapStacks() {
+    if len(stack)==1 {AddStack()}
+
+    if active_stack < len(stack)-1 {
+        active_stack++
+    } else {
+        active_stack = 0
+    }
+}
+
+func PrintStacksInfo() {
+    fmt.Printf( "looking at %d of %d stacks\n", active_stack+1, len(stack) )
+}
+
+func PrintStacks() {
+    fmt.Printf("%v\n", stack)
 }
 
 // system functions 
@@ -510,19 +560,6 @@ func Swap() {
 
 /**************************************/
 // #mark - unary operators
-
-func AddStack() {
-    //stack[active_stack] = append(stack[active_stack], value)
-    //append(stack, []float64{})
-}
-
-func SwapStacks() {
-    if active_stack < len(stack)-1 {
-        active_stack++
-    } else {
-        active_stack = 0
-    }
-}
 
 func Drop() {
     Pop()

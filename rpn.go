@@ -192,6 +192,7 @@ run the interactive mode using the third party readline library. Help the
 library stor history, take each line and send it to ProcessLine()
 */
 func InteractiveAdvance(line *liner.State, verbose *bool) {
+    fmt.Printf("RPN Calculator by thomas.cherry@gmail.com\n")
     for {
         if name, err := line.Prompt(">"); err == nil {
             input := strings.Trim(name, " ")    //clean it
@@ -401,8 +402,8 @@ func Print() {
 }
 
 func Help() {
-    fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
-    
+    /*fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
+
     f := "%15s : %-8s %s\n"
     fmt.Printf(f, "Flag", "Category", "Description")
     fmt.Printf(f, "----", "--------", "-----------")
@@ -412,8 +413,9 @@ func Help() {
     fmt.Printf(f, "--stream", "Input", "Accept formulas from standard in")
     fmt.Printf(f, "--verbose", "output",
         "output more details about inter workings")
+    */
 
-    fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
+    fmt.Printf("%s\n", strings.Repeat("*", 80) )
     
     keys := make( []string, 0 )
     for k := range actions {
@@ -425,10 +427,11 @@ func Help() {
         doc := actions[k].doc
         fmt.Printf("%8s = %s\n", k, doc)
     }
-    fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
+    fmt.Printf("%s\n", strings.Repeat("*", 80) )
 
-    fmt.Printf("%s\n", "a~z will store values (push)")
-    fmt.Printf("%s\n", "A~Z will recall values (pop)")
+    fmt.Printf("%s -- %s\n",
+        "a~z will store values (push)",
+        "A~Z will recall values (pop)")
     fmt.Printf("%s\n", "action:count will call action 'count' times : `+:3`")
 }
 

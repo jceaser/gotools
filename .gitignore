@@ -26,6 +26,7 @@ _testmain.go
 console
 counter
 iif
+isodate
 roll
 scale
 striper

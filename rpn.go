@@ -146,6 +146,16 @@ func InitializeActions() {
     a("dump", Dump, "print out memory storage")
 }
 
+func fish() {
+    no_args := "complete --command rpn --long-option %s ; "
+    with_args := "complete --command rpn --long-option %s --arguments '%s' ; "
+
+    fmt.Printf(with_args, "formula", "code")
+    fmt.Printf(no_args, "interactive")
+    fmt.Printf(no_args, "verbose")
+    fmt.Printf(no_args, "pop")
+}
+
 func main() {
     InitializeStack()
     InitializeActions()
@@ -163,8 +173,14 @@ func main() {
     verbose := flag.Bool("verbose", false, "verbose")
     final_pop := flag.Bool("pop", false,
         "output a final pop")
+    show_fish := flag.Bool("_completion", false, "shell completion help")
     
     flag.Parse()
+
+    if *show_fish {
+        fish()
+         os.Exit(0)
+    }
 
     //process stream if it exists
     stat, _ := os.Stdin.Stat()

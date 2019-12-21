@@ -90,20 +90,23 @@ func InitializeStack() {
 }
 
 func InitializeActions() {
+    // push consts
     a("euler", E, "Decimal expansion of e - Euler's number")
     a("pi", Pi, "Decimal expansion of Pi (or, digits of Pi)")
     a("ln", Ln2, "Decimal expansion of the natural logarithm of 2")
     a("ln10", Ln10, "Decimal expansion of natural logarithm of 10")
+    a("everything", Everything, "Answer to Everything")
 
     // unary actions
     a("drop", Drop, "Remove the top item from the stack")
+    a("pord", Pord, "Remove the bottom item from the stack (opposite of drop)")
     a("--", Decrement, "subtract one from the top of the stack")
     a("++", Increment, "add one to the top of the stack")
     a("^2", Square, "square the item at the top of the stack")
     a("rand", Random, "Generates a random number from 0-1")
     a("integer", Truncate, "Return the integer part of the number")
     a("decimal", Exponent, "Return the decimal part of the number");
-    a("!", Factorial, "")
+    a("!", Factorial, "Factorial")
 
     // binary actions
     a("&", And, "AND values")
@@ -389,6 +392,9 @@ func Push(value float64) {
     }
 }
 
+/**
+Remove the top of the stack and return it
+*/
 func Pop() float64 {
     l := len(stack[active_stack])
     if l < 1 {
@@ -401,8 +407,11 @@ func Pop() float64 {
     return value
 }
 
+/**
+Return the top of the stack, but don't remove it
+*/
 func Peek() float64 {
-    n := len(stack)-1
+    n := len(stack[active_stack])-1
     return stack[active_stack][n]
 }
 
@@ -584,6 +593,11 @@ func Drop() {
     Pop()
 }
 
+func Pord() {
+    RotateLeft()
+    Pop()
+}
+
 func SquareRoot() {
     base := Pop()
     Push( math.Sqrt(base) )
@@ -631,6 +645,7 @@ func Factorial(){
     Push(ans)
 }
 
+func Everything() {Push(42.0)}
 func E() {Push(math.E)}
 func Pi() {Push(math.Pi)}
 func Ln2() {Push(math.Ln2)}

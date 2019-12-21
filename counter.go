@@ -5,7 +5,10 @@ import ("os"
     "flag"
     "time"
     "unsafe"
+    //"strconv"
+    "strings"
     "syscall"
+    "os/exec"
     )
 
 type winsize struct {
@@ -158,10 +161,12 @@ print out a large number at a location
 @param x col to print on
 */
 func PrintNumber(num, y, x int) {
+    if (0<=num && 0<=y && 0<=x) {
     for i:= range letters[num] {
         for j:= range letters[num][i] {
             PrintStrOnErrAt(string(letters[num][i][j]), y+i, x+j+1)
         }
+    }
     }
 }
 
@@ -243,10 +248,20 @@ func makeTimestamp() int64 {
 /** sleep for a second */
 func WaitSecond() {time.Sleep(1*1000 * time.Millisecond)}
 
+func DoCommand(command string) {
+    s := strings.Split(command, " ")
+    cmd := exec.Command(s[0], s[1:]...)
+    cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+    err := cmd.Run()
+    if err != nil {fmt.Printf("Error: %s\n", err)}
+}
+
 func main() {
     var up = flag.Int("up", -1, "count up time.")
     var down = flag.Int("down", -1, "count down")
     var done = flag.String("done", "", "output when done")
+    var cmd = flag.String("command", "", "command to execute")
     var help = flag.Bool("help", false, "Print this help message")
     
     flag.Parse()
@@ -258,25 +273,35 @@ func main() {
     var start = makeTimestamp();
     
     ScrSave()
-    if 0<*up {
+
+    PrintTime("down", 1000)
+    PrintTime("down", 100)
+    PrintTime("down", 10)
+    PrintTime("down", 1)
+    PrintTime("down", 0)
+    PrintTime("down", -1)
+
+    if 0<*up {/*
         for i:=0; i<*up; i++ {
             var now = makeTimestamp();
-            //PrintTime(i)
             PrintTime("up", int(now-start)/1000)
             WaitSecond()
-        }
-    } else if 0<*down {
+        }*/
+    } else if 0<*down {/*
         for i:=*down; 0<=i; i-- {
             var now = makeTimestamp();
-            //PrintTime(i)
             PrintTime("down", *down - int(now-start)/1000)
             WaitSecond()
-        }
+        }*/
     }
     fmt.Fprintf(os.Stderr, "\r")
     ScrRestore()
     
     if *done!="" {
         fmt.Printf("%s\n", *done)
+    }
+
+    if *cmd!="" {
+        DoCommand(*cmd)
     }
 }

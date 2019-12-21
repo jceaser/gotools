@@ -223,6 +223,14 @@ func Table() {
     fmt.Printf("%s\n", rows)
 }
 
+func Sub() {
+    if _, ok := app_data.data["configuration"]; ok {
+        app_data.data["configuration"] = map[string]interface{}{};
+        foo, ok := app_data.data["configuration"].(map[string]interface{})
+        if ok {foo["foo"] = "bar"; }
+    }
+}
+
 func setup_liner(line *liner.State) {
     line.SetCtrlCAborts(true)
 
@@ -294,6 +302,8 @@ func ProcessLine(raw string, data map[string]interface{}) {
         
         case "t", "table":
             Table()
+        case "sub":
+            Sub()
         case "s", "save":
             Save(data, app_data.active_file)
     }

@@ -18,6 +18,23 @@ type winsize struct {
     Ypixel uint16
 }
 
+const (
+    ESC_SAVE_SCREEN = "?47h"
+    ESC_RESTORE_SCREEN = "?47l"
+    
+    ESC_SAVE_CURSOR = "s"
+    ESC_RESTORE_CURSOR = "u"
+    
+    ESC_BOLD_ON = "1m"
+    ESC_BOLD_OFF = "0m"
+    
+    ESC_CURSOR_ON = "?25h"
+    ESC_CURSOR_OFF = "?25l"
+    
+    ESC_CLEAR_SCREEN = "2J"
+    ESC_CLEAR_LINE = "2K"
+)
+
 func getWidth() uint {
     ws := &winsize{}
     retCode, _, errno := syscall.Syscall(syscall.SYS_IOCTL,

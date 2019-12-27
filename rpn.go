@@ -150,13 +150,13 @@ func InitializeActions() {
 }
 
 func fish() {
-    no_args := "complete --command rpn --long-option %s ; "
-    with_args := "complete --command rpn --long-option %s --arguments '%s' ; "
+    no_args := "complete --command rpn --long-option %s --description \"%s\"\n"
+    with_args := "complete --command rpn --long-option %s --arguments \"%s\" --description \"%s\"\n"
 
-    fmt.Printf(with_args, "formula", "code")
-    fmt.Printf(no_args, "interactive")
-    fmt.Printf(no_args, "verbose")
-    fmt.Printf(no_args, "pop")
+    fmt.Printf(with_args, "formula", "code", "math formula to compute")
+    fmt.Printf(no_args, "interactive", "ask user for input and loop")
+    fmt.Printf(no_args, "verbose", "print out more logs")
+    fmt.Printf(no_args, "pop", "Return the final stack value")
 }
 
 func main() {

@@ -56,6 +56,7 @@ type App_Data struct {
     verbose bool
     indent_file bool
     active_file string
+    running bool
 }
 
 var (
@@ -555,12 +556,29 @@ func setup_liner(line *liner.State) {
 }
 
 /**
+print out an esc control
+@param esc control code to print out
+*/
+func PrintCtrOnErr(esc string) {
+    fmt.Fprintf(os.Stderr, "\033[%s", esc)
+}
+
+/**
+print out an esc control
+@param esc control code to print out
+*/
+func PrintCtrOnOut(esc string) {
+    fmt.Fprintf(os.Stdout, "\033[%s", esc)
+}
+
+/**
 run the interactive mode using the third party readline library. Help the 
 library stor history, take each line and send it to ProcessLine()
 */
 func InteractiveAdvance(line *liner.State, data DataBase) {
     fmt.Printf("Database by thomas.cherry@gmail.com\n")
-    for {
+    app_data.running = true
+    for app_data.running==true {
         if name, err := line.Prompt(">"); err == nil {
             input := strings.Trim(name, " ")    //clean it
             line.AppendHistory(name)            //save it
@@ -578,6 +596,8 @@ func InteractiveAdvance(line *liner.State, data DataBase) {
             f.Close()
         }
     }
+    PrintCtrOnOut(ESC_CURSOR_ON)
+    v("\ndone\n")
 }
 
 //Process a line with a command and arguments
@@ -595,7 +615,8 @@ func ProcessLine(raw string, data DataBase) {
             Help()
         case "q", "quit", "exit":
             if app_data.verbose { fmt.Printf("getting out of here\n") }
-            os.Exit(0)
+            app_data.running = false
+            //os.Exit(0)
         case "e", "echo":
             fmt.Printf("%s => %s\n", command, strings.Join(args, ",") )
         case "-", "----":
@@ -632,8 +653,11 @@ func ProcessLine(raw string, data DataBase) {
         case "t", "table":
             Table(args[0])
         case "sum", "summary":
-            Summary(args[0], args[1])
-
+            if len(args)>=2 {
+                Summary(args[0], args[1])
+            } else {
+                fmt.Printf("here with %s.\n", args)
+            }
         case "initialize":
             Initialize()
         case "l", "list":

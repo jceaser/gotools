@@ -337,7 +337,8 @@ func Table(form string) {
 }
 
 // Summaries a form by printing out a table, first row is header, last row is
-// summary row
+// summary row. Each column is represented on the summary row based on data
+// example: sum main avg,avg
 // * @param form name of form to summarize
 // * @param args dash delimitated list of summarize functions
 func Summary(form string, args string) {

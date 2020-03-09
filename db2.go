@@ -8,9 +8,9 @@ import ("fmt"
     /* "log"*/
     "flag"
     "io/ioutil"
-    /*"math"*/
+    "math"
     "strconv"
-    /*"os/exec"*/
+    "os/exec"
     "strings"
     /*"syscall"
     "unsafe"*/
@@ -50,6 +50,9 @@ type App_Data struct {
     backlog_command string
     worker_command string
     backlog_list []string
+    rpn string
+    //column_cache map[string][]interface{}
+    column_cache map[string][]float64
 
     //data map[string]interface{}
     data DataBase
@@ -124,6 +127,16 @@ const (
     ESC_CLEAR_LINE = "2K"
 )
 
+const (
+    ERR_MSG_COL_NOT_FOUND = "Column %s not found\n"
+    ERR_MSG_ROW_BETWEEN = "Row must be between 0 and %d\n"
+    ERR_MSG_VALUE_NUM = "Value '%s' is not a number\n"
+    ERR_MSG_CREATE_ARGS = "create <column_name>? - optional\n"
+    ERR_MSG_READ_ARGS = "read <column_name> <row>\n"
+    ERR_MSG_UPDATE_ARGS = "update <column_name> <row> <value>\n"
+    ERR_MSG_DELETE_ARGS = "delete <row>\n"
+)
+
 // #mark hi
 
 /*func v(msg string) {
@@ -136,6 +149,18 @@ func v(format string, args ...string) {
     if app_data.verbose {
         fmt.Printf(format, args)
     }
+}
+
+//rpn -formula '2 3 +' -pop
+func run(formula string) string {
+    //fmt.Printf("%s\n", formula)
+    out, err := exec.Command(app_data.rpn, "-formula", formula, "-pop").Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
+    output := strings.TrimSpace(string(out[:]))
+    ret := output
+    return ret
 }
 
 func load(file string) *os.File {
@@ -240,14 +265,19 @@ func interface_to_float(raw interface{}) float64 {
 /******************************************************************************/
 // #mark Commands
 
+/** Dump out a list of columns with their rows */
 func List(data DataBase) {
     fmt.Printf("List: ")
     for k,v := range data.Columns {
         fmt.Printf("%s=%+v ", k, v)
     }
+    for k,v := range app_data.column_cache {
+        fmt.Printf("%s=%+v ", k, v)
+    }
     fmt.Printf("\n")
 }
 
+/* Create a new column , called by c command with an argument */
 func CreateColumn(column string) {
     size := data_length()
     app_data.data.Columns[column] = make( []interface{}, 0)
@@ -256,7 +286,7 @@ func CreateColumn(column string) {
     }
 }
 
-// add a row to all columns.
+// add a row to all columns. called by c command with no arguments
 func Create() {
     data := app_data.data.Columns
     for k,v := range data {
@@ -264,9 +294,19 @@ func Create() {
     }
 }
 
-//read a specific value from the column table
+//read a specific value from the column table ; called with read command
 func Read(key string, row int) {
-    fmt.Printf("%s[%d]=%+v\n", key, row, app_data.data.Columns[key][row])
+    if app_data.data.Columns[key]==nil {
+        fmt.Fprintf(os.Stderr, ERR_MSG_COL_NOT_FOUND, key)
+    } else {
+        max := len(app_data.data.Columns[key])-1
+        if max<row || row<0 {
+            fmt.Fprintf(os.Stderr, ERR_MSG_ROW_BETWEEN, max)
+        } else {
+            data := app_data.data.Columns[key][row]
+            fmt.Printf("%s[%d]=%+v\n", key, row, data)
+        }
+    }
 }
 
 //update a specific value from the column table
@@ -274,19 +314,98 @@ func Update(key string, row int, value string) {
     //if value can be turned into a number, then stuf it as a number
     number, err := strconv.ParseFloat(value, 64)
     if err==nil {
-        app_data.data.Columns[key][row] = number
+        //no error, value is a number
+        column := app_data.data.Columns[key]
+        if column == nil {
+            fmt.Fprintf(os.Stderr, ERR_MSG_COL_NOT_FOUND, key)
+        } else {
+            max := len(column)-1
+            if max<row || row<0 {
+                fmt.Fprintf(os.Stderr, ERR_MSG_ROW_BETWEEN, max)
+            } else {
+                app_data.data.Columns[key][row] = number
+            }
+        }
     } else {
-        app_data.data.Columns[key][row] = value
+        //use as is, really do this?
+        //app_data.data.Columns[key][row] = value
+        fmt.Fprintf(os.Stderr, ERR_MSG_VALUE_NUM, value)
     }
 }
 
 //delete a row from all columns
 func Delete(row int) {
     for k,v := range app_data.data.Columns {
-        copy( v[row:], v[row+1:] )
-        v[len(v)-1] = ""
-        v = v[:len(v)-1]
-        app_data.data.Columns[k] = v
+        max := len(v)-1
+        //while we have the first column, check the length before going on
+        if max<row || row<0 {
+            fmt.Fprintf(os.Stderr, ERR_MSG_ROW_BETWEEN, max)
+            break
+        } else {
+            copy( v[row:], v[row+1:] )
+            v[len(v)-1] = ""
+            v = v[:len(v)-1]
+            app_data.data.Columns[k] = v
+        }
+    }
+}
+
+func DeleteColumn(column string) {
+    Nop()
+}
+
+func put_cache(key string, data []float64) {
+    if app_data.column_cache==nil {
+        app_data.column_cache = make(map[string][]float64)
+    }
+    app_data.column_cache[key] = data
+}
+
+func get_cache(key string) []float64 {
+    if app_data.column_cache==nil {
+        app_data.column_cache = make(map[string][]float64)
+    }
+    data := app_data.column_cache[key]
+    
+    return data
+}
+
+func Calculate() {
+    var header bytes.Buffer
+    var rows []bytes.Buffer
+    first := true
+
+    //find the first column and get its length, then initialize rows
+    for _,v := range app_data.data.Columns {
+        for i:=0 ; i<len(v) ; i++ {
+            rows = append(rows, bytes.Buffer{})
+        }
+        break
+    }
+
+    for key,formula := range app_data.data.Calculations {
+        if !first {
+            header.WriteString( "," )
+        }
+        header_title := fmt.Sprintf("%s='%v'", key, formula )
+        header.WriteString( header_title )
+
+        var calc_values []float64
+        for i,_ := range rows {
+            if !first {
+                rows[i].WriteString( "," )
+            }
+            result := formula_for_row(formula, i)
+            result_as_float, _ := strconv.ParseFloat(result, 64)
+            calc_values = append(calc_values, result_as_float)
+            rows[i].WriteString( result )
+        }
+        put_cache(key, calc_values)
+        first = false
+    }
+    fmt.Printf("%v\n", string(header.Bytes()))
+    for i := range rows {
+        fmt.Printf("%v\n", string(rows[i].Bytes()))
     }
 }
 
@@ -295,28 +414,53 @@ func Delete(row int) {
 func Table(form string) {
     var header bytes.Buffer
     var rows []bytes.Buffer
-
+    
     first := true
-
     keys := make([]string, 0, len(app_data.data.Columns))
-    for k := range app_data.data.Columns {
-        keys = append(keys, k)
-    }
+
     if 0<len(form) {
+        //use the form list
         keys = app_data.data.Forms[form]
+    } else {
+        //use all columns
+        for k := range app_data.data.Columns {
+            keys = append(keys, k)
+        }
     }
     
+    //loop throug all the column or form keys
     for _,k := range keys {
-        v := app_data.data.Columns[k]
-        //if v==nil {
-        //    v = app_data.data.Calculations[k]
-        //}
+        var formula = ""
+        v := app_data.data.Columns[k] //return a list of strings
+
+        // if v is nil, then not a column, search calculations
+        if v==nil {
+            formula = app_data.data.Calculations[k]
+            if formula !="" {
+                var calc_values []float64
+                for i,_ := range rows {
+                    if first {
+                        rows = append(rows, bytes.Buffer{})
+                    }
+                    result := formula_for_row(formula, i)
+                    result_as_float, _ := strconv.ParseFloat(result, 64)
+                    calc_values = append(calc_values, result_as_float)
+                    rows[i].WriteString( "," )
+                    rows[i].WriteString( result )
+                }
+                put_cache(k, calc_values)
+            } else {
+                //blank key?
+                continue
+            }
+        }
         if !first {
             header.WriteString( "," )
         }
         header.WriteString( k )
 
         for i := range v {
+            //should this section be outside of the loop
             if first {
                 rows = append( rows, bytes.Buffer{})
             } else {
@@ -336,51 +480,109 @@ func Table(form string) {
     }
 }
 
+/**
+convert a formula to a value
+@param formula calculation to make $c1 $c2 +
+@param row 0 based row count
+@return result
+*/
+func formula_for_row(formula string, row int) string {
+    words := strings.Split(formula, " ")
+    for i,v := range words {
+        if strings.HasPrefix(v, "$") {
+            key := v[1:]
+            columns := app_data.data.Columns[key]
+            if columns!=nil {
+                column := fmt.Sprintf("%f",columns[row])
+                words[i] = column
+            }
+        }
+    }
+    ret := strings.Join(words, " ")
+    ret = run(ret)
+    return ret
+}
+
 // Summaries a form by printing out a table, first row is header, last row is
 // summary row. Each column is represented on the summary row based on data
 // example: sum main avg,avg
 // * @param form name of form to summarize
 // * @param args dash delimitated list of summarize functions
 func Summary(form string, args string) {
+    var out bytes.Buffer
     if 0<len(form) {
-        fmt.Printf("sumarize form %s with %s\n", form, args)
+        v("sumarize form %s with %s\n", form, args)
         Table(form)
-        
+        first_form := app_data.data.Forms[form][0]
         alist := strings.Split(args, ",")
         for i,v := range alist {
-            if i<len(app_data.data.Forms) {
+            if i<=len(app_data.data.Forms) {
                 field := app_data.data.Forms[form][i]
                 data := app_data.data.Columns[field]
-                if 0<i {
-                    fmt.Printf(",")
+                if data == nil {
+                    /*
+                    there is no column data, so try getting calculated values 
+                    from the cache. Table caches it's last calculations for 
+                    functions like summary to build on
+                    */
+                    row_count := len(app_data.data.Columns[first_form])
+                    data = make([]interface{}, row_count)
+                    raw := get_cache(field)
+                    for i,v := range raw {
+                        data[i] = v
+                    }
                 }
+                if 0<i {
+                    out.WriteString( "," )
+                }
+
                 switch v {
-                case "avg":
-                    total := 0.0
-                    count := 0
-                    average := 0.0
-                    for _, value := range data {
-                        total = total + interface_to_float(value)
-                        count = count + 1
-                    }
-                    average = total / float64(count)
-                    fmt.Printf("%f", average)
-                case "sum":
-                    total := 0.0
-                    for _,value := range data {
-                        total = total + interface_to_float(value)
-                    }
-                    fmt.Printf("%f", total)
-                case "count":
-                    count := len(data)
-                    fmt.Printf("%d", count)
+                    case "avg":
+                        total := 0.0
+                        count := 0
+                        average := 0.0
+                        for _, value := range data {
+                            total = total + interface_to_float(value)
+                            count = count + 1
+                        }
+                        average = total / float64(count)
+                        out.WriteString( fmt.Sprintf("%f", average ) )
+                    case "sdev":
+                        var sum, mean, sd float64 = 0, 0, 0
+                        count_i := len(data)
+                        count_f := float64(count_i)
+
+                        for i:=0 ; i<count_i; i++ {
+                            sum += interface_to_float(data[i])
+                        }
+                        mean = sum / count_f
+                        for i:=0 ; i<count_i; i++ {
+                            sd += math.Pow( interface_to_float(data[i])-mean, 2)
+                        }
+                        sd = math.Sqrt( sd / count_f)
+                        out.WriteString( fmt.Sprintf("%f", sd) )
+                    case "sum":
+                        total := 0.0
+                        for _,value := range data {
+                            total = total + interface_to_float(value)
+                        }
+                        out.WriteString( fmt.Sprintf("%f", total) )
+                    case "count":
+                        count := len(data)
+                        out.WriteString( fmt.Sprintf("%d", count) )
                 }
             }
         }
-        fmt.Printf("\n")
+        fmt.Printf( "%v\n", string(out.Bytes()) )
     }
 }
 
+/*
+outputs a number of characters to visually separate out the output
+@param arg 1 if empty, output '----'
+@param arg 1 if not empty, output that character
+@param arg 2 if number, output arg[1] this many times
+*/
 func Dash(args []string) {
     if len(args)<1 {
         fmt.Printf("----\n")
@@ -398,24 +600,32 @@ func Dash(args []string) {
     }
 }
 
+/* do nothing */
 func Nop() {
     fmt.Printf("not implemented yet\n")
 }
 
+/* print out a help method */
 func Help() {
+    fmt.Printf("Database by thomas.cherry@gmail.com\n")
+    fmt.Printf("Manage table data with optional form display.\n")
+    fmt.Printf("\nNote: Arguments with ? are optional\n\n")
     format := "%4s %-7s %-12s %-40s\n"
     forty := strings.Repeat("-",40)
     fmt.Printf(format, "Flag", "Long", "Arguments", "Description")
     fmt.Printf(format,"----","-------","------------",forty)
-    fmt.Printf(format, "c", "create", "", "create a row in each column")
+    fmt.Printf(format, "c", "create", "name?",
+        "create a row in each column, or a new named column")
     fmt.Printf(format, "r", "read", "col row", "read a column row")
     fmt.Printf(format, "u", "update", "col row val", "update a column row")
     fmt.Printf(format, "d", "delete", "row", "delete a row from each column")
     fmt.Printf("\n")
 
-    fmt.Printf(format, "t", "table", "", "quit interactive mode")
+    fmt.Printf(format, "t", "table", "form?",
+        "display a table, optionally as a form")
     fmt.Printf(format, "sum", "summary", "form list",
         "sumarize a form with function list: avg,sum,count")
+    fmt.Printf(format, "l", "ls list", "", "")
     fmt.Printf("\n")
 
     fmt.Printf(format, "q", "quit", "", "quit interactive mode")
@@ -427,6 +637,7 @@ func Help() {
 
 }
 
+/** used by Sub only */
 func value(form string, column int, row int) string {
     form_data := app_data.data.Forms[form]
     column_name := form_data[column]
@@ -626,30 +837,46 @@ func ProcessLine(raw string, data DataBase) {
         /**************************************************************/
         /* CRUD */
         case "c", "create":     //create ; add row to all columns
-            if len(args[0])==0 {
-                Create()
-            } else {            //create column
-                CreateColumn(args[0])
+            if 1<len(args) {
+                fmt.Fprintf(os.Stderr, ERR_MSG_CREATE_ARGS)
+            } else {
+                if len(args[0])==0 {
+                    Create()
+                } else {            //create column
+                    CreateColumn(args[0])
+                }
             }
         case "r", "read":       //read column row
-            column := args[0]
-            row, err := strconv.Atoi(args[1])
-            if err==nil {
-                Read( column, row )
+            if len(args)!=2 {
+                fmt.Fprintf(os.Stderr, ERR_MSG_READ_ARGS)
+            } else {
+                column := args[0]
+                row, err := strconv.Atoi(args[1])
+                if err==nil {
+                    Read( column, row )
+                }
             }
         case "u", "update":     //update column row value
-            column := args[0]
-            row, row_err := strconv.Atoi(args[1])
-            value := args[2]
-            if row_err==nil {
-                Update( column, row, value)
+            if len(args)!=3 {
+                fmt.Fprintf(os.Stderr, ERR_MSG_UPDATE_ARGS)
+            } else {
+                column := args[0]
+                row, row_err := strconv.Atoi(args[1])
+                value := args[2]
+                if row_err==nil {
+                    Update( column, row, value)
+                }
             }
         case "d", "delete":     //delete row
-            row, err := strconv.Atoi(args[0])
-            if err==nil {
-                Delete(row)
-            } else {            //delete column
-                Nop() //TODO: add way to delete column
+            if len(args)!=1 || len(args[0])<1{
+                fmt.Fprintf(os.Stderr, ERR_MSG_DELETE_ARGS)
+            } else {
+                row, err := strconv.Atoi(args[0])
+                if err==nil {
+                    Delete(row)
+                } else {            //delete column
+                    DeleteColumn(args[0]) //TODO: add way to delete column
+                }
             }
         case "t", "table":
             Table(args[0])
@@ -659,9 +886,11 @@ func ProcessLine(raw string, data DataBase) {
             } else {
                 fmt.Printf("here with %s.\n", args)
             }
+        case "calc", "calculate":
+            Calculate()
         case "initialize":
             Initialize()
-        case "l", "list":
+        case "l", "ls", "list":
             List(data)
         case "sub":
             Sub(args[0]) //- test function
@@ -694,10 +923,12 @@ func main() {
     verbose := flag.Bool("verbose", false, "verbose")
     file_name := flag.String("file", "data.json", "data file")
     init_command := flag.String("command", "", "Run one command and exit")
+    rpn_command := flag.String("rpn", "rpn", "command to process calculations")
     flag.Parse()
 
     app_data.verbose = *verbose
     app_data.active_file = *file_name
+    app_data.rpn = *rpn_command
     data := Load(app_data.active_file)
 
     if data == nil {

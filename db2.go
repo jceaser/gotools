@@ -6,6 +6,7 @@ import ("fmt"
     /*"io" */
     "bytes"
     /* "log"*/
+    "sort"
     "flag"
     "io/ioutil"
     "math"
@@ -70,7 +71,7 @@ var (
 var buffers = screen_buffers{left_hud: "", right_hud: "", content: ""}
 var app_data = App_Data{backlog_command:"",
     worker_command:"",
-    indent_file:false,
+    indent_file:true,
     verbose:false }
 
 const (
@@ -218,13 +219,17 @@ func Save(data DataBase, file string) {
         json_text, err = json.Marshal(data)
     }
 
+    if len(file)<1 {
+        file = app_data.active_file
+    }
+
     if err!=nil {
-        fmt.Printf("error: %s\n", err)
+        fmt.Printf("error: %s - %s\n", file, err)
         return
     }
     err = ioutil.WriteFile(file, json_text, 0644)
     if err!=nil {
-        fmt.Printf("Error: %s\n", err)
+        fmt.Printf("Error: %s - %s\n", file, err)
     } else {
         v("File %s has been saved\n", file)
     }
@@ -537,44 +542,123 @@ func Summary(form string, args string) {
                 }
 
                 switch v {
-                    case "avg":
-                        total := 0.0
-                        count := 0
-                        average := 0.0
-                        for _, value := range data {
-                            total = total + interface_to_float(value)
-                            count = count + 1
-                        }
-                        average = total / float64(count)
-                        out.WriteString( fmt.Sprintf("%f", average ) )
-                    case "sdev":
-                        var sum, mean, sd float64 = 0, 0, 0
-                        count_i := len(data)
-                        count_f := float64(count_i)
-
-                        for i:=0 ; i<count_i; i++ {
-                            sum += interface_to_float(data[i])
-                        }
-                        mean = sum / count_f
-                        for i:=0 ; i<count_i; i++ {
-                            sd += math.Pow( interface_to_float(data[i])-mean, 2)
-                        }
-                        sd = math.Sqrt( sd / count_f)
+                    case "a", "avg":
+                        out.WriteString( fmt.Sprintf("%f", Average(data) ) )
+                    case "c", "count":
+                        out.WriteString( fmt.Sprintf("%d", len(data)) )
+                    case "mx", "max":
+                        out.WriteString( fmt.Sprintf("%f", Max(data)) )
+                    case "m", "medium":
+                        out.WriteString( fmt.Sprintf("%f", Median(data)) )
+                    case "md", "mode":
+                        out.WriteString( fmt.Sprintf("%f", Mode(data)) )
+                    case "mn", "min":
+                        out.WriteString( fmt.Sprintf("%f", Min(data)) )
+                    case "s", "sum":
+                        out.WriteString( fmt.Sprintf("%f", Sum(data)) )
+                    case "sd", "sdev":
+                        sd := StandardDeviation(data)
                         out.WriteString( fmt.Sprintf("%f", sd) )
-                    case "sum":
-                        total := 0.0
-                        for _,value := range data {
-                            total = total + interface_to_float(value)
-                        }
-                        out.WriteString( fmt.Sprintf("%f", total) )
-                    case "count":
-                        count := len(data)
-                        out.WriteString( fmt.Sprintf("%d", count) )
                 }
             }
         }
         fmt.Printf( "%v\n", string(out.Bytes()) )
     }
+}
+
+func Average(data []interface{}) float64 {
+    total := 0.0
+    count := 0
+    average := 0.0
+    for _, value := range data {
+        total = total + interface_to_float(value)
+        count = count + 1
+    }
+    average = total / float64(count)
+    return average
+}
+
+func StandardDeviation (data []interface{}) float64 {
+    var sum, mean, sd float64 = 0, 0, 0
+    count_i := len(data)
+    count_f := float64(count_i)
+
+    for i:=0 ; i<count_i; i++ {
+        sum += interface_to_float(data[i])
+    }
+    mean = sum / count_f
+    for i:=0 ; i<count_i; i++ {
+        sd += math.Pow( interface_to_float(data[i])-mean, 2)
+    }
+    sd = math.Sqrt( sd / count_f)
+    return sd
+}
+
+func Sum(data []interface{}) float64 {
+    total := 0.0
+    for _,value := range data {
+        total = total + interface_to_float(value)
+    }
+    return total
+}
+
+func Max(data []interface{}) float64 {
+    max := math.SmallestNonzeroFloat64
+    for _,value := range data {
+        max = math.Max(max, interface_to_float(value))
+    }
+    return max
+}
+
+func Min(data []interface{}) float64 {
+    min := math.MaxFloat64
+    for _,value := range data {
+        min = math.Min(min, interface_to_float(value))
+    }
+    return min
+}
+
+func Median(data []interface{}) float64 {
+
+    sort.Slice(data, func(i, j int) bool {
+        return interface_to_float(data[i]) < interface_to_float(data[j])
+    })
+
+    len_of_data := float64(len(data))
+    if math.Mod(len_of_data, 2) == 0.0 { //even number
+        index := int((math.Floor(len_of_data) / 2) - 1.0)
+        left := interface_to_float(data[index])
+        right := interface_to_float(data[index+1])
+        return ( left + right ) / 2.0
+    } else { //odd number
+        // len(0,1,2,3.4,5,6) == 7
+        // 3.5
+        index := int(math.Floor(len_of_data / 2))
+        return interface_to_float(data[index])
+    }
+    return -1
+}
+
+func Mode(data []interface{}) float64 {
+    sort.Slice(data, func(i, j int) bool {
+        return interface_to_float(data[i]) < interface_to_float(data[j])
+    })
+    hash := make( map[float64]int )
+    //collect counts
+    for _, v := range data {
+        value := interface_to_float(v)
+        existing := hash[value]
+        hash[value] = existing+1
+    }
+    selected := 0.0
+    count := 1  //assume at least two values to bump off the default
+    for k, v := range hash {
+        if count<v {
+            selected = k
+            count = v
+        }
+    }
+    return selected
 }
 
 /*
@@ -628,12 +712,16 @@ func Help() {
     fmt.Printf(format, "l", "ls list", "", "")
     fmt.Printf("\n")
 
+    fmt.Printf(format, "s", "save", "", "save database to file")
     fmt.Printf(format, "q", "quit", "", "quit interactive mode")
     fmt.Printf(format, "", "exit", "", "quit interactive mode")
     fmt.Printf(format, "h", "help", "", "this output")
     fmt.Printf(format, "e", "echo", "string", "echo out something")
     fmt.Printf(format, "-", "----", "sep count", "print out a separator")
-    fmt.Printf(format, "s", "save", "", "save database to file")
+    fmt.Printf(format, "", "file", "name?", "set or print current file name")
+    fmt.Printf(format, "", "rpn", "path?", "set or print current rpn command")
+    fmt.Printf(format, "", "verbose", "", "toggle verbose mode")
+
 
 }
 
@@ -703,7 +791,7 @@ func Sub(form string) {
 }
 
 //create a sample database with 3x2 columns and rows, 2 forms, one setting
-func Initialize() {
+func Initialize(file_name string) {
     data := DataBase{}
     
     data.Columns = make( map[string][]interface{} )
@@ -719,7 +807,7 @@ func Initialize() {
     data.Forms["alt"] = []string{"bar","rab","foobar"}
 
     data.Calculations = make ( map[string]string )
-    data.Calculations["foobar"] = "foo bar +"
+    data.Calculations["foobar"] = "$foo $bar +"
 
     data.Settings = make ( map[string]string )
     data.Settings["author"] = "thomas.cherry@gmail.com"
@@ -728,10 +816,20 @@ func Initialize() {
 
     fmt.Printf("the database is %+v\n", data)
 
-    file := "data.json"
+    //file := "data.json"
+    file := file_name
+    if len(file_name)<1 {
+        file = app_data.active_file
+    }
 
-    json_text, err := json.MarshalIndent(data, "", "    ")
-    //v("here: %s\n", json_text)
+    var json_text []byte
+    var err error
+    if app_data.indent_file {
+        json_text, err = json.MarshalIndent(data, "", "    ")
+    } else {
+        json_text, err = json.Marshal(data)
+    }
+
     if err!=nil {
         fmt.Printf("error: %s\n", err)
     }
@@ -833,6 +931,22 @@ func ProcessLine(raw string, data DataBase) {
             fmt.Printf("%s => %s\n", command, strings.Join(args, ",") )
         case "-", "----":
             Dash(args)
+        case "verbose":
+            app_data.verbose = !app_data.verbose
+            v("Verbose is %s\n", "on")
+        case "file":
+            if 0<len(args) && 0<len(args[0]) {
+                //set mode
+                app_data.active_file = args[0]
+            } else {
+                fmt.Printf("Active file: '%s'.\n", app_data.active_file) 
+            }
+        case "rpn":
+            if 0<len(args) && 0<len(args[0]) {
+                app_data.rpn = args[0]
+            } else {
+                fmt.Printf("RPN command: %s\n", app_data.rpn)
+            }
 
         /**************************************************************/
         /* CRUD */
@@ -888,8 +1002,12 @@ func ProcessLine(raw string, data DataBase) {
             }
         case "calc", "calculate":
             Calculate()
-        case "initialize":
-            Initialize()
+        case "init", "initialize":
+            file := app_data.active_file
+            if len(args)==1 || 0<len(args[0]) {
+                file = args[0]
+            }
+            Initialize(file)
         case "l", "ls", "list":
             List(data)
         case "sub":
@@ -914,7 +1032,11 @@ func ProcessLine(raw string, data DataBase) {
 
 
         case "s", "save":
-            Save(data, app_data.active_file)
+            file := app_data.active_file
+            if len(args)==1 || 0<len(args[0]) {
+                file = args[0]
+            }
+            Save(data, file)
     }
 }
 

@@ -414,6 +414,23 @@ func Calculate() {
     }
 }
 
+func FormFiller(form string, action string) {
+    //var header bytes.Buffer
+    //var row []bytes.Buffer
+    row_count := data_length()
+    first := true
+    fmt.Printf("Enter in the values for the form %s.\n", form)
+    for _,v := range app_data.data.Forms[form] {
+        fmt.Printf("Value for field %s\n", v)
+        for row := 0 ; row<row_count; row++ {
+            fmt.Printf("Row %d:\n", row)
+        }
+        if first {
+        }
+        first = false
+    }
+}
+
 //Dump table of all columns
 //* @param form name of the form to dump out, empty for entire table
 func Table(form string) {
@@ -546,6 +563,8 @@ func Summary(form string, args string) {
                         out.WriteString( fmt.Sprintf("%f", Average(data) ) )
                     case "c", "count":
                         out.WriteString( fmt.Sprintf("%d", len(data)) )
+                    case "h", "har", "harmonic":
+                        out.WriteString( fmt.Sprintf("%f", Harmonic(data)) )
                     case "mx", "max":
                         out.WriteString( fmt.Sprintf("%f", Max(data)) )
                     case "m", "medium":
@@ -577,6 +596,19 @@ func Average(data []interface{}) float64 {
     average = total / float64(count)
     return average
 }
+
+func Harmonic(data []interface{}) float64 {
+    total := 0.0
+    count := 0
+    harmonic := 0.0
+    for _, value := range data {
+        total = total + ( 1.0 / interface_to_float(value) )
+        count = count + 1
+    }
+    harmonic = float64(count) / total
+    return harmonic
+}
+
 
 func StandardDeviation (data []interface{}) float64 {
     var sum, mean, sd float64 = 0, 0, 0
@@ -625,18 +657,17 @@ func Median(data []interface{}) float64 {
     })
 
     len_of_data := float64(len(data))
+    ret := 0.0
     if math.Mod(len_of_data, 2) == 0.0 { //even number
         index := int((math.Floor(len_of_data) / 2) - 1.0)
         left := interface_to_float(data[index])
         right := interface_to_float(data[index+1])
-        return ( left + right ) / 2.0
+        ret = ( left + right ) / 2.0
     } else { //odd number
-        // len(0,1,2,3.4,5,6) == 7
-        // 3.5
         index := int(math.Floor(len_of_data / 2))
-        return interface_to_float(data[index])
+        ret = interface_to_float(data[index])
     }
-    return -1
+    return ret
 }
 
 func Mode(data []interface{}) float64 {
@@ -708,7 +739,7 @@ func Help() {
     fmt.Printf(format, "t", "table", "form?",
         "display a table, optionally as a form")
     fmt.Printf(format, "sum", "summary", "form list",
-        "sumarize a form with function list: avg,sum,count")
+        "sumarize a form with function list: avg,count,max,min,medium,mode,min,sum,sdev")
     fmt.Printf(format, "l", "ls list", "", "")
     fmt.Printf("\n")
 
@@ -721,8 +752,6 @@ func Help() {
     fmt.Printf(format, "", "file", "name?", "set or print current file name")
     fmt.Printf(format, "", "rpn", "path?", "set or print current rpn command")
     fmt.Printf(format, "", "verbose", "", "toggle verbose mode")
-
-
 }
 
 /** used by Sub only */
@@ -796,11 +825,11 @@ func Initialize(file_name string) {
     
     data.Columns = make( map[string][]interface{} )
     data.Columns["foo"] = make( []interface{}, 2 )
-    data.Columns["foo"] = []interface{}{1.0,2.0}
+    data.Columns["foo"] = []interface{}{0.0,1.0,2.0}
     data.Columns["bar"] = make( []interface{}, 2 )
-    data.Columns["bar"] = []interface{}{3.0,4.0}
+    data.Columns["bar"] = []interface{}{3.0,4.0,3.0}
     data.Columns["rab"] = make( []interface{}, 2 )
-    data.Columns["rab"] = []interface{}{5.0,6.0}
+    data.Columns["rab"] = []interface{}{5.0,6.0,6.0}
 
     data.Forms = make( map[string][]string )
     data.Forms["main"] = []string{"foo","bar","foobar"}
@@ -811,8 +840,8 @@ func Initialize(file_name string) {
 
     data.Settings = make ( map[string]string )
     data.Settings["author"] = "thomas.cherry@gmail.com"
-    data.Settings["main.summary"] = "avg,sum"
-    data.Settings["alt.summary"] = "sum,avg"
+    data.Settings["main.summary"] = "avg,sum,avg"
+    data.Settings["alt.summary"] = "sum,avg,sum"
 
     fmt.Printf("the database is %+v\n", data)
 
@@ -992,6 +1021,8 @@ func ProcessLine(raw string, data DataBase) {
                     DeleteColumn(args[0]) //TODO: add way to delete column
                 }
             }
+        case "ff", "form":
+            FormFiller(args[0], "create")
         case "t", "table":
             Table(args[0])
         case "sum", "summary":

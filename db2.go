@@ -415,20 +415,47 @@ func Calculate() {
 }
 
 func FormFiller(form string, action string) {
+    dry_run := false
+    if action=="dry-run" {
+        dry_run = true
+    }
     //var header bytes.Buffer
     //var row []bytes.Buffer
-    row_count := data_length()
-    first := true
-    fmt.Printf("Enter in the values for the form %s.\n", form)
-    for _,v := range app_data.data.Forms[form] {
-        fmt.Printf("Value for field %s\n", v)
-        for row := 0 ; row<row_count; row++ {
-            fmt.Printf("Row %d:\n", row)
-        }
-        if first {
-        }
-        first = false
+    line := liner.NewLiner()
+    defer line.Close()
+    if !dry_run {
+        Create() //new row
     }
+    row := data_length() - 1
+    //values := make([]float64, 0, data_length())
+    //index := 0
+    for _,column := range app_data.data.Forms[form] {
+        if 0<len(app_data.data.Calculations[column]) {
+            continue // this is a calculation, skip it
+        }
+        asking := true
+        answer := 0.0
+        for asking {
+            fmt.Printf("Enter in a number for %s\n", column)
+            raw_response, _ := line.Prompt("#")
+            if raw_response=="stop" {
+                return
+            }
+            number, err := strconv.ParseFloat(raw_response, 64)
+            if err!=nil {
+                fmt.Printf("that was not a number. Try again.\n")
+            } else {
+                answer = number
+                asking = false
+            }
+        }
+        //values[index] = answer
+        //index++
+        if !dry_run {
+            app_data.data.Columns[column][row] = answer
+        }
+    }
+    //fmt.Printf("all answers %v\n", values)
 }
 
 //Dump table of all columns

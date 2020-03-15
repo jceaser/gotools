@@ -47,13 +47,20 @@ type DataBase struct {
     Settings map[string]string
 }
 
+type Format struct {
+    divider string
+    template_float string
+    template_string string
+    template_decimal string
+}
+
 type App_Data struct {
     backlog_command string
     worker_command string
     backlog_list []string
     rpn string
-    //column_cache map[string][]interface{}
-    column_cache map[string][]float64
+    column_cache map[string][]interface{}
+    //column_cache map[string][]float64
 
     //data map[string]interface{}
     data DataBase
@@ -61,6 +68,7 @@ type App_Data struct {
     indent_file bool
     active_file string
     running bool
+    format Format
 }
 
 var (
@@ -72,7 +80,11 @@ var buffers = screen_buffers{left_hud: "", right_hud: "", content: ""}
 var app_data = App_Data{backlog_command:"",
     worker_command:"",
     indent_file:true,
-    verbose:false }
+    verbose:false,
+    format: Format{template_float:"%10.3f",
+        template_string:"%10s",
+        template_decimal:"%10d",
+        divider:" | "}}
 
 const (
     RuneSterling = '£'
@@ -254,6 +266,59 @@ func data_length() int {
     return length
 }
 
+func is_interface_a_string(raw interface{}) bool {
+    ret := false
+    switch raw.(type) {
+        case string:
+            ret = true
+        default:
+            ret = false
+    }
+    return ret
+}
+
+func is_interface_a_number(raw interface{}) bool {
+    ret := false
+    switch raw.(type) {
+        case string:
+            ret = false
+        case float64:
+            ret = true
+        case float32:
+            ret = true
+        case int64:
+            ret = true
+        case int32:
+            ret = true
+        case int:
+            ret = true
+        default:
+            ret = false
+    }
+    return ret
+}
+
+func interface_to_string(raw interface{}) string {
+    ret := ""
+    switch i := raw.(type) {
+        case string:
+            ret = i
+        case float64:
+            ret = fmt.Sprintf("%f", i)
+        case float32:
+            ret = fmt.Sprintf("%f", i)
+        case int64:
+            ret = fmt.Sprintf("%0.0d", i)
+        case int32:
+            ret = fmt.Sprintf("%0.0d", i)
+        case int:
+            ret = fmt.Sprintf("%0.0d", i)
+        default:
+            fmt.Printf("got here")
+    }
+    return ret
+}
+
 func interface_to_float(raw interface{}) float64 {
     ret := 0.0
     switch i := raw.(type) {
@@ -359,16 +424,20 @@ func DeleteColumn(column string) {
     Nop()
 }
 
-func put_cache(key string, data []float64) {
+//func put_cache(key string, data []float64) {
+func put_cache(key string, data []interface{}) {
     if app_data.column_cache==nil {
-        app_data.column_cache = make(map[string][]float64)
+        //app_data.column_cache = make(map[string][]float64)
+        app_data.column_cache = make(map[string][]interface{})
     }
     app_data.column_cache[key] = data
 }
 
-func get_cache(key string) []float64 {
+//func get_cache(key string) []float64 {
+func get_cache(key string) []interface{} {
     if app_data.column_cache==nil {
-        app_data.column_cache = make(map[string][]float64)
+        //app_data.column_cache = make(map[string][]float64)
+        app_data.column_cache = make(map[string][]interface{})
     }
     data := app_data.column_cache[key]
     
@@ -390,15 +459,16 @@ func Calculate() {
 
     for key,formula := range app_data.data.Calculations {
         if !first {
-            header.WriteString( "," )
+            header.WriteString( app_data.format.divider )
         }
         header_title := fmt.Sprintf("%s='%v'", key, formula )
         header.WriteString( header_title )
 
-        var calc_values []float64
+        //var calc_values []float64
+        var calc_values []interface{}
         for i,_ := range rows {
             if !first {
-                rows[i].WriteString( "," )
+                rows[i].WriteString( app_data.format.divider )
             }
             result := formula_for_row(formula, i)
             result_as_float, _ := strconv.ParseFloat(result, 64)
@@ -464,69 +534,93 @@ func Table(form string) {
     var header bytes.Buffer
     var rows []bytes.Buffer
     
+    for i:=0 ; i<data_length() ; i++ {
+       rows = append(rows, bytes.Buffer{})
+    }
+
     first := true
     keys := make([]string, 0, len(app_data.data.Columns))
 
+    //figure out which fields need to be displayed
     if 0<len(form) {
         //use the form list
         keys = app_data.data.Forms[form]
     } else {
-        //use all columns
+        //use all columns not any calculations
         for k := range app_data.data.Columns {
             keys = append(keys, k)
         }
     }
     
-    //loop throug all the column or form keys
+    sort.Strings(keys)
+
+    //loop throug all the column and calculation keys
     for _,k := range keys {
         var formula = ""
-        v := app_data.data.Columns[k] //return a list of strings
+        values := app_data.data.Columns[k] //return a list of strings
 
-        // if v is nil, then not a column, search calculations
-        if v==nil {
+        // if values is nil, then not a column, search calculations
+        if values==nil {
             formula = app_data.data.Calculations[k]
-            if formula !="" {
-                var calc_values []float64
-                for i,_ := range rows {
-                    if first {
-                        rows = append(rows, bytes.Buffer{})
-                    }
-                    result := formula_for_row(formula, i)
-                    result_as_float, _ := strconv.ParseFloat(result, 64)
-                    calc_values = append(calc_values, result_as_float)
-                    rows[i].WriteString( "," )
-                    rows[i].WriteString( result )
-                }
-                put_cache(k, calc_values)
-            } else {
-                //blank key?
-                continue
+            if formula=="" {
+                continue //key is blank, skip it
             }
+            //var calc_values []float64
+            var calc_values []interface{}
+            for i,_ := range rows {
+                result := formula_for_row(formula, i)
+                result_as_float, _ := strconv.ParseFloat(result, 64)
+                calc_values = append(calc_values, result_as_float)
+                /*if !first {
+                    rows[i].WriteString( app_data.format.divider )
+                }
+                rows[i].WriteString( fmt.Sprintf(app_data.template_string, result) )
+                */
+            }
+            put_cache(k, calc_values)
+            values = calc_values
         }
         if !first {
-            header.WriteString( "," )
+            header.WriteString( app_data.format.divider )
         }
-        header.WriteString( k )
-
-        for i := range v {
+        header.WriteString( fmt.Sprintf(app_data.format.template_string, k) )
+        
+        for i := range values {
             //should this section be outside of the loop
-            if first {
-                rows = append( rows, bytes.Buffer{})
-            } else {
-                rows[i].WriteString( "," )
+            if !first {
+                rows[i].WriteString( app_data.format.divider )
             }
             column := ""
-            if i<len(v) {
-                column = fmt.Sprintf("%v", v[i])
+            if i<len(values) {
+                format := app_data.format.template_float
+                if is_interface_a_string(values[i]) {
+                    format = app_data.format.template_string
+                }
+                column = fmt.Sprintf(format, values[i])
             }
             rows[i].WriteString( column )
         }
         first = false
     }
-    fmt.Printf("%v\n", string(header.Bytes()))
+
+    //create a dashed line, it will be used twice
+    var sbuf bytes.Buffer
+    for i,_ := range keys {
+        if 0<i {
+            sbuf.WriteString(app_data.format.divider)
+        }
+        sbuf.WriteString(fmt.Sprintf(app_data.format.template_string, "--------"))
+    }
+    buffer_line := sbuf.String()
+
+    //print out the table
+    fmt_lined := (app_data.format.template_string + "\n")
+    fmt.Printf( fmt_lined , string(header.Bytes()))
+    fmt.Printf("%s\n", buffer_line)
     for i := range rows {
         fmt.Printf("%v\n", string(rows[i].Bytes()))
     }
+    fmt.Printf("%s\n", buffer_line)
 }
 
 /**
@@ -552,6 +646,9 @@ func formula_for_row(formula string, row int) string {
     return ret
 }
 
+const (
+    SUMMARY_FUNCS = "avg, count, har, max, medium, mode, min, sum, sdev"
+)
 // Summaries a form by printing out a table, first row is header, last row is
 // summary row. Each column is represented on the summary row based on data
 // example: sum main avg,avg
@@ -582,30 +679,31 @@ func Summary(form string, args string) {
                     }
                 }
                 if 0<i {
-                    out.WriteString( "," )
+                    out.WriteString( app_data.format.divider )
                 }
-
+                result := ""
                 switch v {
                     case "a", "avg":
-                        out.WriteString( fmt.Sprintf("%f", Average(data) ) )
-                    case "c", "count":
-                        out.WriteString( fmt.Sprintf("%d", len(data)) )
+                        result = fmt.Sprintf(app_data.format.template_float, Average(data) )
+                    case "c", "cnt", "count":
+                        result = fmt.Sprintf(app_data.format.template_decimal, len(data))
                     case "h", "har", "harmonic":
-                        out.WriteString( fmt.Sprintf("%f", Harmonic(data)) )
+                        result = fmt.Sprintf(app_data.format.template_float, Harmonic(data))
                     case "mx", "max":
-                        out.WriteString( fmt.Sprintf("%f", Max(data)) )
-                    case "m", "medium":
-                        out.WriteString( fmt.Sprintf("%f", Median(data)) )
-                    case "md", "mode":
-                        out.WriteString( fmt.Sprintf("%f", Mode(data)) )
+                        result = fmt.Sprintf(app_data.format.template_float, Max(data))
+                    case "m", "med", "medium":
+                        result = fmt.Sprintf(app_data.format.template_float, Median(data))
+                    case "md", "mod", "mode":
+                        result = fmt.Sprintf(app_data.format.template_float, Mode(data))
                     case "mn", "min":
-                        out.WriteString( fmt.Sprintf("%f", Min(data)) )
+                        result = fmt.Sprintf(app_data.format.template_float, Min(data))
                     case "s", "sum":
-                        out.WriteString( fmt.Sprintf("%f", Sum(data)) )
-                    case "sd", "sdev":
+                        result = fmt.Sprintf(app_data.format.template_float, Sum(data))
+                    case "sd", "dev", "sdev":
                         sd := StandardDeviation(data)
-                        out.WriteString( fmt.Sprintf("%f", sd) )
+                        result = fmt.Sprintf(app_data.format.template_float, sd)
                 }
+                out.WriteString ( result )
             }
         }
         fmt.Printf( "%v\n", string(out.Bytes()) )
@@ -766,7 +864,8 @@ func Help() {
     fmt.Printf(format, "t", "table", "form?",
         "display a table, optionally as a form")
     fmt.Printf(format, "sum", "summary", "form list",
-        "sumarize a form with function list: avg,count,max,min,medium,mode,min,sum,sdev")
+        "sumarize a form with function list:")
+    fmt.Printf(format, "", "", "", "avg,count,max,min,medium,mode,min,sum,sdev")
     fmt.Printf(format, "l", "ls list", "", "")
     fmt.Printf("\n")
 
@@ -858,12 +957,12 @@ func Initialize(file_name string) {
     data.Columns["rab"] = make( []interface{}, 2 )
     data.Columns["rab"] = []interface{}{5.0,6.0,6.0}
 
+    data.Calculations = make ( map[string]string )
+    data.Calculations["foobar"] = "$foo $bar +"
+
     data.Forms = make( map[string][]string )
     data.Forms["main"] = []string{"foo","bar","foobar"}
     data.Forms["alt"] = []string{"bar","rab","foobar"}
-
-    data.Calculations = make ( map[string]string )
-    data.Calculations["foobar"] = "$foo $bar +"
 
     data.Settings = make ( map[string]string )
     data.Settings["author"] = "thomas.cherry@gmail.com"
@@ -1109,6 +1208,7 @@ func main() {
     app_data.verbose = *verbose
     app_data.active_file = *file_name
     app_data.rpn = *rpn_command
+
     data := Load(app_data.active_file)
 
     if data == nil {

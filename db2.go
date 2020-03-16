@@ -245,6 +245,21 @@ func Save(data DataBase, file string) {
     }
 }
 
+func Dump() {
+    var json_text []byte
+    var err error
+    if app_data.indent_file {
+        json_text, err = json.MarshalIndent(app_data.data, "", "    ")
+    } else {
+        json_text, err = json.Marshal(app_data.data)
+    }
+    if err==nil {
+        fmt.Printf("%s\n", json_text)
+    } else {
+        fmt.Printf("Error: %s\n", err)
+    }
+}
+
 func contains(arr []string, str string) bool {
    for _, a := range arr {
       if a == str {
@@ -889,16 +904,33 @@ func Help() {
     fmt.Printf("Database by thomas.cherry@gmail.com\n")
     fmt.Printf("Manage table data with optional form display.\n")
     fmt.Printf("\nNote: Arguments with ? are optional\n\n")
-    format := "%4s %-7s %-12s %-40s\n"
+    
+    format := "%4s %-12s %-12s %-40s\n"
+    
     forty := strings.Repeat("-",40)
     fmt.Printf(format, "Flag", "Long", "Arguments", "Description")
-    fmt.Printf(format,"----","-------","------------",forty)
+    fmt.Printf(format,"----","------------","------------",forty)
     fmt.Printf(format, "c", "create", "name?",
         "create a row in each column, or a new named column")
     fmt.Printf(format, "r", "read", "col row", "read a column row")
     fmt.Printf(format, "u", "update", "col row val", "update a column row")
     fmt.Printf(format, "d", "delete", "index", "delete a row by number")
     fmt.Printf(format, "", "", "name", "delete a column by name")
+    fmt.Printf(format, "n", "rename", "src dest", "rename a column from src to dest")
+    fmt.Printf("\n")
+
+    fmt.Printf(format, "fc", "form-create", "name list", "Create a form")
+    fmt.Printf(format, "fr", "form-read", "name?", "list forms, all if name is not given")
+    fmt.Printf(format, "fu", "form-update", "name formula", "update a form")
+    fmt.Printf(format, "fd", "form-delete", "name", "delete a form")
+    fmt.Printf(format, "fn", "form-rename", "src dest", "rename a form from src to dest")
+    fmt.Printf("\n")
+
+    fmt.Printf(format, "cc", "calc-create", "name formula", "Create a calculation")
+    fmt.Printf(format, "cr", "calc-read", "name?", "list calculations, all if name is not given")
+    fmt.Printf(format, "cu", "calc-update", "name formula", "update a calculation")
+    fmt.Printf(format, "cd", "calc-delete", "name", "delete a calculation")
+    fmt.Printf(format, "cn", "calc-rename", "src dest", "rename a calculation from src to dest")
     fmt.Printf("\n")
 
     fmt.Printf(format, "t", "table", "form?",
@@ -910,6 +942,7 @@ func Help() {
     fmt.Printf("\n")
 
     fmt.Printf(format, "s", "save", "", "save database to file")
+    fmt.Printf(format, "", "dump", "", "output the current data")
     fmt.Printf(format, "q", "quit", "", "quit interactive mode")
     fmt.Printf(format, "", "exit", "", "quit interactive mode")
     fmt.Printf(format, "h", "help", "", "this output")
@@ -983,6 +1016,94 @@ func Sub(form string) {
         fmt.Printf("\n")
     }
 
+}
+
+func FormCreate(args []string) {
+    if 1<len(args) {
+        name := arg(args, 0, "")
+        items := args[1:]
+        app_data.data.Forms[name] = items
+    }
+}
+
+func FormRead(args []string) {
+    name := arg(args, 0, "")
+    if len(name)<1 {
+        fmt.Printf("%+v\n", app_data.data.Forms)//TODO: make this pretty
+    } else {
+        fmt.Printf("%+v\n", app_data.data.Forms[name])//TODO: make this pretty
+    }
+}
+
+func FormUpdate(args []string) {
+    if 1<len(args) {
+        name := arg(args, 0, "")
+        items := args[1:]
+        app_data.data.Forms[name] = items
+    }
+}
+
+func FormDelete(args []string) {
+    name := arg(args, 0, "")
+    delete (app_data.data.Forms, name)
+}
+
+func FormRename(args []string) {
+    src_name := arg(args, 0, "")
+    dest_name := arg(args, 1, "")
+    if 0<len(src_name) && 0<len(dest_name) {
+        app_data.data.Forms[dest_name] =
+            app_data.data.Forms[src_name]
+        delete(app_data.data.Forms, src_name)
+    }
+}
+
+func CalculationCreate (args []string) {
+    name := arg(args, 0, "")
+    formula := ""
+    for i:=1 ; i<len(args) ; i++ {
+        formula = formula + " " + args[i]
+    }
+    if 0<len(name) && 0<len(formula) {
+        app_data.data.Calculations[name] = formula
+    }
+}
+
+func CalculationRead (args []string) {
+    name := arg(args, 0, "")
+    if 0<len(name) {
+        fmt.Printf("%s\n", app_data.data.Calculations[name])
+    } else {
+        fmt.Printf("%v\n", app_data.data.Calculations)
+    }
+}
+
+func CalculationUpdate (args []string) {
+    name := arg(args, 0, "")
+    formula := ""
+    for i:=1 ; i<len(args) ; i++ {
+        formula = formula + " " + args[i]
+    }
+    if 0<len(name) && 0<len(formula) {
+        app_data.data.Calculations[name] = formula
+    }
+}
+
+func CalculationDelete (args []string) {
+    name := arg(args, 0, "")
+    if 0<len(name) {
+        delete(app_data.data.Calculations, name)
+    }
+}
+
+func CalculationRename (args []string) {
+    src_name := arg(args, 0, "")
+    dest_name := arg(args, 1, "")
+    if 0<len(src_name) && 0<len(dest_name) {
+        app_data.data.Calculations[dest_name] =
+            app_data.data.Calculations[src_name]
+        delete(app_data.data.Calculations, src_name)
+    }
 }
 
 //create a sample database with 3x2 columns and rows, 2 forms, one setting
@@ -1077,7 +1198,7 @@ func PrintCtrOnOut(esc string) {
 
 /**
 run the interactive mode using the third party readline library. Help the 
-library stor history, take each line and send it to ProcessLine()
+library store history, take each line and send it to ProcessLine()
 */
 func InteractiveAdvance(line *liner.State, data DataBase) {
     fmt.Printf("Database by thomas.cherry@gmail.com\n")
@@ -1199,6 +1320,46 @@ func ProcessLine(raw string, data DataBase) {
                     DeleteColumn(args[0]) //TODO: add way to delete column
                 }
             }
+        case "n", "rename":     //rename a row
+            src_name := arg(args, 0, "")
+            dest_name := arg(args, 1, "")
+            if 0<len(src_name) && 0<len(dest_name) {
+                app_data.data.Columns[dest_name] =
+                    app_data.data.Columns[src_name]
+                delete(app_data.data.Columns, src_name)
+            }
+        
+        /**************************************************************/
+        /* Form CRUD */
+        
+        case "fc", "form-create":
+            FormCreate(args)
+        case "fr", "form-read":
+            FormRead(args)
+        case "fu", "form-update":
+            FormUpdate(args)
+        case "fd", "form-delete":
+            FormDelete(args)
+        case "fn", "form-rename":
+            FormRename(args)
+        
+        /**************************************************************/
+        /* Calculation CRUD */
+
+        case "cc", "calc-create":
+            CalculationCreate(args)
+        case "cr", "calc-read":
+            CalculationRead(args)
+        case "cu", "calc-update":
+            CalculationUpdate(args)
+        case "cd", "calc-delete":
+            CalculationDelete(args)
+        case "cn", "calc-rename":
+            CalculationRename (args)
+
+        /**************************************************************/
+        /* Other actions */
+
         case "ff", "form":
             form := ""
             action := "create"
@@ -1212,20 +1373,6 @@ func ProcessLine(raw string, data DataBase) {
         case "t", "table":
             Table(args[0])
         case "sum", "summary":
-            /*var form, options string
-            if 0<len(args) {
-                form = args[0]
-            }
-            if 1<len(args) {
-                options = args[1]
-            }
-
-            if form=="" {
-                return
-            }
-            if options=="" {
-                options = app_data.data.Settings[args[0]+".summary"]
-            }*/
             form := arg(args, 0, "main")
             options := arg(args, 1, app_data.data.Settings[args[0]+".summary"])
             Summary(form, options)
@@ -1239,27 +1386,15 @@ func ProcessLine(raw string, data DataBase) {
             Initialize(file)
         case "l", "ls", "list":
             List(data)
-        case "dev":
+        case "-dev":
             Sub(args[0]) //- test function
-
+        case "dump":
+            Dump()
         case "f", "forms":
             fmt.Printf("%+v\n", app_data.data.Forms)//TODO: make this pretty
-        case "fc", "create-form":
-            Nop()
-        case "fd", "delete-form":
-            Nop()
         
-        case "cs", "calcs":
-            Nop()
-        case "cc", "create-calc":
-            Nop()
-        case "cr", "read-calc":
-            Nop()
-        case "cu", "update-calc":
-            Nop()
-        case "cd", "delete-calc":
-
-
+        /*case "cs", "calcs":
+            Nop()*/
         case "s", "save":
             file := app_data.active_file
             if len(args)==1 || 0<len(args[0]) {

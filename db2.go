@@ -67,6 +67,7 @@ type App_Data struct {
     active_file string
     running bool
     format Format
+    sort bool
 }
 
 var (
@@ -82,7 +83,8 @@ var app_data = App_Data{backlog_command:"",
     format: Format{template_float:"%10.3f",
         template_string:"%10s",
         template_decimal:"%10d",
-        divider:" | "}}
+        divider:" | "},
+    sort:true}
 
 const (
     RuneSterling = '£'
@@ -146,20 +148,24 @@ const (
     ERR_MSG_READ_ARGS = "read <column_name> <row>\n"
     ERR_MSG_UPDATE_ARGS = "update <column_name> <row> <value>\n"
     ERR_MSG_DELETE_ARGS = "delete <row>\n"
+    ERR_MSG_FORM_REQUIRED = "A form name is required\n"
+    ERR_MSG_FORM_EXISTS = "There already exists a form named '%s'.\n"
+    ERR_MSG_FORM_NOT_EXISTS = "There is no form named '%s'.\n"
+    ERR_MSG_FORM_create = "form-create <name> [list]\n"
+    ERR_MSG_FORM_UPDATE = "form-update <name> [list]\n"
+    ERR_MSG_FORM_RENAME = "form-rename <name> <src> <dest>\n"
 )
 
 // #mark hi
-
-/*func v(msg string) {
-    if app_data.verbose {
-        fmt.Printf("%s\n", [msg])
-    }
-}*/
 
 func v(format string, args ...string) {
     if app_data.verbose {
         fmt.Printf(format, args)
     }
+}
+
+func e(format string, args ...string) {
+    fmt.Fprintf(os.Stderr, format, args)
 }
 
 //rpn -formula '2 3 +' -pop
@@ -625,27 +631,11 @@ func table_worker(form string) (bytes.Buffer, []bytes.Buffer, []string) {
         first = false
     }
 
-/*
-    //create a dashed line, it will be used twice
-    var sbuf bytes.Buffer
-    for i,_ := range keys {
-fmt.Printf("here with %d in %v\n", i, keys)
-        if 0<i {
-            sbuf.WriteString(app_data.format.divider)
-        }
-        sbuf.WriteString(fmt.Sprintf(app_data.format.template_string, "--------"))
+    if app_data.sort {
+        sort.Slice(rows, func(i, j int) bool {
+            return rows[i].String() < rows[j].String()
+        })
     }
-*/
-    //print out the table
-    /*buffer_line := sbuf.String()
-    fmt_lined := (app_data.format.template_string + "\n")
-    fmt.Printf( fmt_lined , string(header.Bytes()))
-    fmt.Printf("%s\n", buffer_line)
-    for i := range rows {
-        fmt.Printf("%v\n", string(rows[i].Bytes()))
-    }
-    fmt.Printf("%s\n", buffer_line)
-    */
     return header, rows, keys
 }
 
@@ -951,6 +941,8 @@ func Help() {
     fmt.Printf(format, "", "file", "name?", "set or print current file name")
     fmt.Printf(format, "", "rpn", "path?", "set or print current rpn command")
     fmt.Printf(format, "", "verbose", "", "toggle verbose mode")
+    fmt.Printf(format, "", "sort?", "", "output current sorting state")
+    fmt.Printf(format, "", "sort", "", "toggle the current sort mode")
 }
 
 /** used by Sub only */
@@ -1019,10 +1011,20 @@ func Sub(form string) {
 }
 
 func FormCreate(args []string) {
-    if 1<len(args) {
+    if len(args)<2 {
+        e(ERR_MSG_FORM_create)
+    } else {
         name := arg(args, 0, "")
-        items := args[1:]
-        app_data.data.Forms[name] = items
+        if len(name)<1 {
+            e(ERR_MSG_FORM_REQUIRED, name)
+        } else {
+            if app_data.data.Forms[name]!=nil {
+                e(ERR_MSG_FORM_EXISTS, name)
+            } else {
+                items := args[1:]
+                app_data.data.Forms[name] = items
+            }
+        }
     }
 }
 
@@ -1036,25 +1038,43 @@ func FormRead(args []string) {
 }
 
 func FormUpdate(args []string) {
-    if 1<len(args) {
+    if len(args)<2 {
+        e(ERR_MSG_FORM_UPDATE)
+    } else {
         name := arg(args, 0, "")
-        items := args[1:]
-        app_data.data.Forms[name] = items
+        if len(name)<1 {
+            e(ERR_MSG_FORM_REQUIRED)
+        } else {
+            items := args[1:]
+            if app_data.data.Forms[name] == nil {
+                e(ERR_MSG_FORM_NOT_EXISTS, name)
+            } else {
+                app_data.data.Forms[name] = items
+            }
+        }
     }
 }
 
 func FormDelete(args []string) {
     name := arg(args, 0, "")
+    if len(name)<1 {
+        e(ERR_MSG_FORM_REQUIRED)
+        return
+    }
     delete (app_data.data.Forms, name)
 }
 
 func FormRename(args []string) {
-    src_name := arg(args, 0, "")
-    dest_name := arg(args, 1, "")
-    if 0<len(src_name) && 0<len(dest_name) {
-        app_data.data.Forms[dest_name] =
-            app_data.data.Forms[src_name]
-        delete(app_data.data.Forms, src_name)
+    if len(args)<2 {
+        e(ERR_MSG_FORM_RENAME);
+    } else {
+        src_name := arg(args, 0, "")
+        dest_name := arg(args, 1, "")
+        if 0<len(src_name) && 0<len(dest_name) {
+            app_data.data.Forms[dest_name] =
+                app_data.data.Forms[src_name]
+            delete(app_data.data.Forms, src_name)
+        }
     }
 }
 
@@ -1085,7 +1105,11 @@ func CalculationUpdate (args []string) {
         formula = formula + " " + args[i]
     }
     if 0<len(name) && 0<len(formula) {
-        app_data.data.Calculations[name] = formula
+        if _, ok := app_data.data.Calculations[name] ; ok {
+            fmt.Printf("no calculation")
+        } else {
+            app_data.data.Calculations[name] = formula
+        }
     }
 }
 
@@ -1370,6 +1394,10 @@ func ProcessLine(raw string, data DataBase) {
                 action = args[1]
             }
             FormFiller(form, action)
+        case "sort?":
+            fmt.Printf("sort is %t.\n", app_data.sort)
+        case "sort":
+            app_data.sort = !app_data.sort
         case "t", "table":
             Table(args[0])
         case "sum", "summary":

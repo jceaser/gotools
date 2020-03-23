@@ -47,20 +47,27 @@ type DataBase struct {
     Settings map[string]string
 }
 
+type Format struct {
+    divider string
+    template_float string
+    template_string string
+    template_decimal string
+}
+
 type App_Data struct {
     backlog_command string
     worker_command string
     backlog_list []string
     rpn string
-    //column_cache map[string][]interface{}
-    column_cache map[string][]float64
+    column_cache map[string][]interface{}
 
-    //data map[string]interface{}
     data DataBase
     verbose bool
     indent_file bool
     active_file string
     running bool
+    format Format
+    sort bool
 }
 
 var (
@@ -72,7 +79,12 @@ var buffers = screen_buffers{left_hud: "", right_hud: "", content: ""}
 var app_data = App_Data{backlog_command:"",
     worker_command:"",
     indent_file:true,
-    verbose:false }
+    verbose:false,
+    format: Format{template_float:"%10.3f",
+        template_string:"%10s",
+        template_decimal:"%10d",
+        divider:" | "},
+    sort:true}
 
 const (
     RuneSterling = '£'
@@ -136,20 +148,66 @@ const (
     ERR_MSG_READ_ARGS = "read <column_name> <row>\n"
     ERR_MSG_UPDATE_ARGS = "update <column_name> <row> <value>\n"
     ERR_MSG_DELETE_ARGS = "delete <row>\n"
+    ERR_MSG_FORM_REQUIRED = "A form name is required\n"
+    ERR_MSG_FORM_EXISTS = "There already exists a form named '%s'.\n"
+    ERR_MSG_FORM_NOT_EXISTS = "There is no form named '%s'.\n"
+    ERR_MSG_FORM_create = "form-create <name> [list]\n"
+    ERR_MSG_FORM_UPDATE = "form-update <name> [list]\n"
+    ERR_MSG_FORM_RENAME = "form-rename <name> <src> <dest>\n"
 )
 
 // #mark hi
-
-/*func v(msg string) {
-    if app_data.verbose {
-        fmt.Printf("%s\n", [msg])
-    }
-}*/
 
 func v(format string, args ...string) {
     if app_data.verbose {
         fmt.Printf(format, args)
     }
+}
+
+func e(format string, args ...string) {
+    fmt.Fprintf(os.Stderr, format, args)
+}
+
+func PrintStrAt(msg string, y, x int) {
+    fmt.Printf("\033[%d;%dH%s", y, x, msg)
+}
+
+func PrintCtrAt(esc string, y, x int) {
+    fmt.Printf("\033[%d;%dH\033[%s", y, x, esc)
+}
+
+/** Save the screen setup at the start of the app */
+func ScrSave() {
+    PrintCtrOnErr(ESC_SAVE_SCREEN)
+    PrintCtrOnErr(ESC_SAVE_CURSOR)
+    //PrintCtrOnErr(ESC_CURSOR_OFF)
+    PrintCtrOnErr(ESC_CLEAR_SCREEN)
+}
+
+func ColorText(text string, color int) string {
+    encoded := fmt.Sprintf("\033[0;%dm%s\033[0m", color, text)
+    return encoded
+}
+
+func Red(text string) string {
+    return ColorText(text, 31)
+}
+
+func Green(text string) string {
+    return ColorText(text, 32)
+}
+
+func Blue(text string) string {
+    return ColorText(text, 34)
+}
+
+
+
+/** Restore the screen setup from SrcSave() */
+func ScrRestore() {
+    //PrintCtrOnErr(ESC_CURSOR_ON)
+    PrintCtrOnErr(ESC_RESTORE_CURSOR)
+    PrintCtrOnErr(ESC_RESTORE_SCREEN)
 }
 
 //rpn -formula '2 3 +' -pop
@@ -189,6 +247,10 @@ func load(file string) *os.File {
     }
     //defer json_raw.Close()
     return json_raw
+}
+
+func SetData(data DataBase) {
+    app_data.data = data
 }
 
 func Load(file string) *DataBase {
@@ -235,6 +297,21 @@ func Save(data DataBase, file string) {
     }
 }
 
+func Dump() {
+    var json_text []byte
+    var err error
+    if app_data.indent_file {
+        json_text, err = json.MarshalIndent(app_data.data, "", "    ")
+    } else {
+        json_text, err = json.Marshal(app_data.data)
+    }
+    if err==nil {
+        fmt.Printf("%s\n", json_text)
+    } else {
+        fmt.Printf("Error: %s\n", err)
+    }
+}
+
 func contains(arr []string, str string) bool {
    for _, a := range arr {
       if a == str {
@@ -244,14 +321,82 @@ func contains(arr []string, str string) bool {
    return false
 }
 
+func sorted_keys(data map[string][]interface{}) []string {
+    keys := make([]string, len(data))
+    i := 0
+    for k := range data {
+        keys[i] = k
+        i++
+    }
+    sort.Strings(keys)
+    return keys
+}
+
 //util method to find the length of the 'first' column
 func data_length() int {
+    return DataLength(app_data.data)
+}
+
+func DataLength(data DataBase) int {
     length := -1
-    for _ , v := range app_data.data.Columns {
+    for _ , v := range data.Columns {
         length = len(v)
         break
     }
     return length
+}
+
+func is_interface_a_string(raw interface{}) bool {
+    ret := false
+    switch raw.(type) {
+        case string:
+            ret = true
+        default:
+            ret = false
+    }
+    return ret
+}
+
+func is_interface_a_number(raw interface{}) bool {
+    ret := false
+    switch raw.(type) {
+        case string:
+            ret = false
+        case float64:
+            ret = true
+        case float32:
+            ret = true
+        case int64:
+            ret = true
+        case int32:
+            ret = true
+        case int:
+            ret = true
+        default:
+            ret = false
+    }
+    return ret
+}
+
+func interface_to_string(raw interface{}) string {
+    ret := ""
+    switch i := raw.(type) {
+        case string:
+            ret = i
+        case float64:
+            ret = fmt.Sprintf("%f", i)
+        case float32:
+            ret = fmt.Sprintf("%f", i)
+        case int64:
+            ret = fmt.Sprintf("%0.0d", i)
+        case int32:
+            ret = fmt.Sprintf("%0.0d", i)
+        case int:
+            ret = fmt.Sprintf("%0.0d", i)
+        default:
+            fmt.Printf("got here")
+    }
+    return ret
 }
 
 func interface_to_float(raw interface{}) float64 {
@@ -282,6 +427,38 @@ func List(data DataBase) {
     fmt.Printf("\n")
 }
 
+func Row(args []string, data DataBase) {
+    //row form? row?
+    row := 0
+    form := ""
+    if 0<len(args) {
+        form = arg(args, 0, "")
+    }
+    if 1<len(args) {
+        //just a row number
+        raw_row, err := strconv.Atoi(arg(args, 1, "0"))
+        if err!=nil {
+            fmt.Printf("error: %v\n", err)
+            return
+        } else {
+            row = raw_row
+        }
+    }
+
+    keys := data.Forms[form]
+    //sort.Strings(keys)
+
+    for i,v := range keys {
+        if value , exists := data.Columns[v] ; exists {
+            if i!=0 {
+                fmt.Printf(" ")
+            }
+            fmt.Printf("%f", value[row])
+        }
+    }
+    fmt.Printf("\n")
+}
+
 /* Create a new column , called by c command with an argument */
 func CreateColumn(column string) {
     size := data_length()
@@ -296,6 +473,13 @@ func Create() {
     data := app_data.data.Columns
     for k,v := range data {
         app_data.data.Columns[k] = append(v, 0.0)
+    }
+}
+
+func create(data DataBase) {
+    column_data := data.Columns
+    for k,v := range column_data {
+        data.Columns[k] = append(v, 0.0)
     }
 }
 
@@ -356,19 +540,42 @@ func Delete(row int) {
 }
 
 func DeleteColumn(column string) {
-    Nop()
+    delete(app_data.data.Columns, column)
 }
 
-func put_cache(key string, data []float64) {
+func AppendTable(args []string, data DataBase) {
+    /* format: column_values */
+    arg_count := len(args)
+    column_count := len(data.Columns)
+    if arg_count<1 {
+        return
+    }
+    create(data)
+    row := DataLength(data)-1
+    index := 0
+    for _, column := range sorted_keys(data.Columns) {
+        /*v("%d of %d & %d: set '%s' to '%v', row=%d.\n",
+            index, arg_count, column_count, column, args[index], row)*/
+        data.Columns[column][row] = args[index]
+
+        //prep for next round
+        index = index + 1
+        if arg_count<=index || column_count<=index {
+            break
+        }
+    }
+}
+
+func put_cache(key string, data []interface{}) {
     if app_data.column_cache==nil {
-        app_data.column_cache = make(map[string][]float64)
+        app_data.column_cache = make(map[string][]interface{})
     }
     app_data.column_cache[key] = data
 }
 
-func get_cache(key string) []float64 {
+func get_cache(key string) []interface{} {
     if app_data.column_cache==nil {
-        app_data.column_cache = make(map[string][]float64)
+        app_data.column_cache = make(map[string][]interface{})
     }
     data := app_data.column_cache[key]
     
@@ -390,15 +597,15 @@ func Calculate() {
 
     for key,formula := range app_data.data.Calculations {
         if !first {
-            header.WriteString( "," )
+            header.WriteString( app_data.format.divider )
         }
         header_title := fmt.Sprintf("%s='%v'", key, formula )
         header.WriteString( header_title )
 
-        var calc_values []float64
+        var calc_values []interface{}
         for i,_ := range rows {
             if !first {
-                rows[i].WriteString( "," )
+                rows[i].WriteString( app_data.format.divider )
             }
             result := formula_for_row(formula, i)
             result_as_float, _ := strconv.ParseFloat(result, 64)
@@ -427,8 +634,6 @@ func FormFiller(form string, action string) {
         Create() //new row
     }
     row := data_length() - 1
-    //values := make([]float64, 0, data_length())
-    //index := 0
     for _,column := range app_data.data.Forms[form] {
         if 0<len(app_data.data.Calculations[column]) {
             continue // this is a calculation, skip it
@@ -436,9 +641,10 @@ func FormFiller(form string, action string) {
         asking := true
         answer := 0.0
         for asking {
-            fmt.Printf("Enter in a number for %s\n", column)
+            fmt.Printf("Enter in a number for column '%s'.\n", column)
             raw_response, _ := line.Prompt("#")
-            if raw_response=="stop" {
+            quiters := []string{"stop","exit","quit"}
+            if contains(quiters, raw_response) {
                 return
             }
             number, err := strconv.ParseFloat(raw_response, 64)
@@ -449,84 +655,210 @@ func FormFiller(form string, action string) {
                 asking = false
             }
         }
-        //values[index] = answer
-        //index++
         if !dry_run {
             app_data.data.Columns[column][row] = answer
         }
     }
-    //fmt.Printf("all answers %v\n", values)
+}
+
+/* Use control codes to draw a form the user fills out */
+func FormFillerVisual(form string, action string) {
+ScrSave()
+
+    //Lines
+    LINE_QUESTION := 1
+    LINE_INPUT := 2
+    LINE_MESSAGE := 3
+    LINE_FORM_START := 5
+    LINE_FORM_HEAD := LINE_FORM_START - 1
+
+    dry_run := false
+    if action=="dry-run" {
+        dry_run = true
+    }
+    line := liner.NewLiner()
+    defer line.Close()
+    /*if !dry_run {
+        Create() //new row
+    }
+    row := data_length() - 1*/
+
+    temp_data := make(map[string]interface{})
+
+    //setup
+    PrintStrAt("", LINE_FORM_HEAD, 1)
+    fmt.Print(strings.Repeat(fmt.Sprintf("%c", RuneS3), 80))
+    for c_count,column := range app_data.data.Forms[form] {
+        if _, ok := app_data.data.Calculations[column] ; ok {
+            continue // this is a calculation, skip it
+        }
+        //answer := app_data.data.Columns[column][row]
+        answer := temp_data[column]
+        PrintStrAt(fmt.Sprintf("%d: %s = %f.\n", c_count, column, answer), c_count+LINE_FORM_START, 1)
+    }
+reviewing:=true
+for reviewing {
+
+    for c_count,column := range app_data.data.Forms[form] {
+        if 0<len(app_data.data.Calculations[column]) {
+            continue // this is a calculation, skip it
+        }
+        asking := true
+        answer := 0.0
+        for asking {
+            PrintStrAt(fmt.Sprintf("Enter in a number for column '%s'.\n", Green(column)), LINE_QUESTION, 1)
+            
+            PrintCtrAt(ESC_CLEAR_LINE, LINE_INPUT,1)
+            PrintStrAt(fmt.Sprintf(""), LINE_INPUT, 1)
+            raw_response, _ := line.Prompt("#")
+            PrintCtrAt(ESC_CLEAR_LINE, LINE_INPUT,1)
+            
+            quiters := []string{"stop","exit","quit"}
+            if contains(quiters, raw_response) {
+ScrRestore()
+                return
+            }
+            number, err := strconv.ParseFloat(raw_response, 64)
+            if err!=nil {
+                PrintStrAt(fmt.Sprintf(Red("that was not a number. Try again.\n")), LINE_MESSAGE,1)
+            } else {
+                PrintCtrAt(ESC_CLEAR_LINE, LINE_MESSAGE,1)
+                answer = number
+                asking = false
+            }
+        }
+        if !dry_run {
+            msg := fmt.Sprintf("%d: %s = %f\n", c_count, Green(column), answer)
+            PrintStrAt(msg, c_count+LINE_FORM_START, 1)
+            var a interface{}
+            a = answer
+            temp_data[column] = a
+            //app_data.data.Columns[column][row] = answer
+        }
+    }
+    
+    PrintCtrAt(ESC_CLEAR_LINE, LINE_QUESTION,1)
+    raw_response, _ := line.Prompt("done? yes or no: ")
+    PrintCtrAt(ESC_CLEAR_LINE, LINE_QUESTION,1)
+    
+    quiters := []string{"stop","exit","e","done","d","yes", "y", "save"}
+    if contains(quiters, raw_response) {
+        reviewing = false
+        if !dry_run {
+            Create() //new row
+            row := data_length() - 1
+            for k, v := range temp_data {
+                //should also create the new row here
+                app_data.data.Columns[k][row] = v
+            }
+        }
+    }
+}
+
+ScrRestore()
+
 }
 
 //Dump table of all columns
 //* @param form name of the form to dump out, empty for entire table
 func Table(form string) {
+    header, rows, keys := table_worker(form)
+
+    //create a dashed line, it will be used twice
+    var sbuf bytes.Buffer
+    for i:=0 ; i<len(keys) ; i++ {
+//fmt.Printf("here with %d in %v\n", i, keys)
+        if 0<i {
+            sbuf.WriteString(app_data.format.divider)
+        }
+        sbuf.WriteString(fmt.Sprintf(app_data.format.template_string, "---------"))
+    }
+
+    //print out the table
+    buffer_line := sbuf.String()
+    fmt_lined := (app_data.format.template_string + "\n")
+    fmt.Printf( fmt_lined , string(header.Bytes()))
+    fmt.Printf("%s\n", buffer_line)
+    for i := range rows {
+        fmt.Printf("%v\n", string(rows[i].Bytes()))
+    }
+    fmt.Printf("%s\n", buffer_line)
+
+
+}
+func table_worker(form string) (bytes.Buffer, []bytes.Buffer, []string) {
     var header bytes.Buffer
     var rows []bytes.Buffer
+    var keys []string
     
-    first := true
-    keys := make([]string, 0, len(app_data.data.Columns))
+    for i:=0 ; i<data_length() ; i++ {
+       rows = append(rows, bytes.Buffer{})
+    }
 
+    first := true
+
+    //figure out which fields need to be displayed
     if 0<len(form) {
         //use the form list
         keys = app_data.data.Forms[form]
     } else {
-        //use all columns
+        //use all columns ; not any calculations
+        keys = make([]string, 0, len(app_data.data.Columns))
         for k := range app_data.data.Columns {
             keys = append(keys, k)
         }
+        sort.Strings(keys)
     }
     
-    //loop throug all the column or form keys
+    //loop throug all the column and calculation keys
     for _,k := range keys {
         var formula = ""
-        v := app_data.data.Columns[k] //return a list of strings
+        values := app_data.data.Columns[k] //return a list of strings
 
-        // if v is nil, then not a column, search calculations
-        if v==nil {
+        // if values is nil, then not a column, search calculations
+        if values==nil {
             formula = app_data.data.Calculations[k]
-            if formula !="" {
-                var calc_values []float64
-                for i,_ := range rows {
-                    if first {
-                        rows = append(rows, bytes.Buffer{})
-                    }
-                    result := formula_for_row(formula, i)
-                    result_as_float, _ := strconv.ParseFloat(result, 64)
-                    calc_values = append(calc_values, result_as_float)
-                    rows[i].WriteString( "," )
-                    rows[i].WriteString( result )
-                }
-                put_cache(k, calc_values)
-            } else {
-                //blank key?
-                continue
+            if formula=="" {
+                continue //key is blank, skip it
             }
+            var calc_values []interface{}
+            for i,_ := range rows {
+                result := formula_for_row(formula, i)
+                result_as_float, _ := strconv.ParseFloat(result, 64)
+                calc_values = append(calc_values, result_as_float)
+            }
+            put_cache(k, calc_values)
+            values = calc_values
         }
         if !first {
-            header.WriteString( "," )
+            header.WriteString( app_data.format.divider )
         }
-        header.WriteString( k )
-
-        for i := range v {
+        header.WriteString( fmt.Sprintf(app_data.format.template_string, k) )
+        
+        for i := range values {
             //should this section be outside of the loop
-            if first {
-                rows = append( rows, bytes.Buffer{})
-            } else {
-                rows[i].WriteString( "," )
+            if !first {
+                rows[i].WriteString( app_data.format.divider )
             }
             column := ""
-            if i<len(v) {
-                column = fmt.Sprintf("%v", v[i])
+            if i<len(values) {
+                format := app_data.format.template_float
+                if is_interface_a_string(values[i]) {
+                    format = app_data.format.template_string
+                }
+                column = fmt.Sprintf(format, values[i])
             }
             rows[i].WriteString( column )
         }
         first = false
     }
-    fmt.Printf("%v\n", string(header.Bytes()))
-    for i := range rows {
-        fmt.Printf("%v\n", string(rows[i].Bytes()))
+
+    if app_data.sort {
+        sort.Slice(rows, func(i, j int) bool {
+            return rows[i].String() < rows[j].String()
+        })
     }
+    return header, rows, keys
 }
 
 /**
@@ -538,6 +870,10 @@ convert a formula to a value
 func formula_for_row(formula string, row int) string {
     words := strings.Split(formula, " ")
     for i,v := range words {
+        //this allows for the row number to be inserted in as as column
+        if strings.HasPrefix(v, "#row") {
+            words[i] = fmt.Sprintf("%d",row)
+        }
         if strings.HasPrefix(v, "$") {
             key := v[1:]
             columns := app_data.data.Columns[key]
@@ -552,6 +888,9 @@ func formula_for_row(formula string, row int) string {
     return ret
 }
 
+const (
+    SUMMARY_FUNCS = "avg, count, har, max, medium, mode, min, nop, sum, sdev"
+)
 // Summaries a form by printing out a table, first row is header, last row is
 // summary row. Each column is represented on the summary row based on data
 // example: sum main avg,avg
@@ -561,11 +900,23 @@ func Summary(form string, args string) {
     var out bytes.Buffer
     if 0<len(form) {
         v("sumarize form %s with %s\n", form, args)
+        if app_data.data.Forms[form]==nil {
+            fmt.Printf("Could not find form '%s'.\n", form)
+            return
+        }
         Table(form)
         first_form := app_data.data.Forms[form][0]
-        alist := strings.Split(args, ",")
-        for i,v := range alist {
-            if i<=len(app_data.data.Forms) {
+        var alist []string
+        if len(args)<1 {
+            form_summary := app_data.data.Settings[form+".summary"]
+            if 0<len(form_summary) {
+                alist = strings.Split(form_summary, ",")
+            }
+        } else {
+            alist = strings.Split(args, ",")
+        }
+        for i,value := range alist {
+            if i<len(app_data.data.Forms[form]) {
                 field := app_data.data.Forms[form][i]
                 data := app_data.data.Columns[field]
                 if data == nil {
@@ -577,37 +928,39 @@ func Summary(form string, args string) {
                     row_count := len(app_data.data.Columns[first_form])
                     data = make([]interface{}, row_count)
                     raw := get_cache(field)
-                    for i,v := range raw {
-                        data[i] = v
+                    for i,cached_value := range raw {
+                        data[i] = cached_value
                     }
+fmt.Printf("found cached calculations: %v\n", data[i])
                 }
                 if 0<i {
-                    out.WriteString( "," )
+                    out.WriteString( app_data.format.divider )
                 }
-
-                switch v {
+                result := ""
+                switch value {
                     case "a", "avg":
-                        out.WriteString( fmt.Sprintf("%f", Average(data) ) )
-                    case "c", "count":
-                        out.WriteString( fmt.Sprintf("%d", len(data)) )
+                        result = fmt.Sprintf(app_data.format.template_float, Average(data) )
+                    case "c", "cnt", "count":
+                        result = fmt.Sprintf(app_data.format.template_decimal, len(data))
                     case "h", "har", "harmonic":
-                        out.WriteString( fmt.Sprintf("%f", Harmonic(data)) )
+                        result = fmt.Sprintf(app_data.format.template_float, Harmonic(data))
                     case "mx", "max":
-                        out.WriteString( fmt.Sprintf("%f", Max(data)) )
-                    case "m", "medium":
-                        out.WriteString( fmt.Sprintf("%f", Median(data)) )
-                    case "md", "mode":
-                        out.WriteString( fmt.Sprintf("%f", Mode(data)) )
+                        result = fmt.Sprintf(app_data.format.template_float, Max(data))
+                    case "m", "med", "medium":
+                        result = fmt.Sprintf(app_data.format.template_float, Median(data))
+                    case "md", "mod", "mode":
+                        result = fmt.Sprintf(app_data.format.template_float, Mode(data))
                     case "mn", "min":
-                        out.WriteString( fmt.Sprintf("%f", Min(data)) )
-                    case "", "n", "none":
-                        out.WriteString("")
+                        result = fmt.Sprintf(app_data.format.template_float, Min(data))
+                    case "n", "nop":
+                        result = fmt.Sprintf(app_data.format.template_string, "")
                     case "s", "sum":
-                        out.WriteString( fmt.Sprintf("%f", Sum(data)) )
-                    case "sd", "sdev":
+                        result = fmt.Sprintf(app_data.format.template_float, Sum(data))
+                    case "sd", "dev", "sdev":
                         sd := StandardDeviation(data)
-                        out.WriteString( fmt.Sprintf("%f", sd) )
+                        result = fmt.Sprintf(app_data.format.template_float, sd)
                 }
+                out.WriteString ( result )
             }
         }
         fmt.Printf( "%v\n", string(out.Bytes()) )
@@ -619,8 +972,10 @@ func Average(data []interface{}) float64 {
     count := 0
     average := 0.0
     for _, value := range data {
-        total = total + interface_to_float(value)
-        count = count + 1
+        if is_interface_a_number(value) {
+           total = total + interface_to_float(value)
+            count = count + 1
+        }
     }
     average = total / float64(count)
     return average
@@ -631,25 +986,32 @@ func Harmonic(data []interface{}) float64 {
     count := 0
     harmonic := 0.0
     for _, value := range data {
-        total = total + ( 1.0 / interface_to_float(value) )
-        count = count + 1
+        if is_interface_a_number(value) {
+            total = total + ( 1.0 / interface_to_float(value) )
+            count = count + 1
+        }
     }
     harmonic = float64(count) / total
     return harmonic
 }
 
-
 func StandardDeviation (data []interface{}) float64 {
     var sum, mean, sd float64 = 0, 0, 0
-    count_i := len(data)
-    count_f := float64(count_i)
+    count_i := 0;//len(data)
+    count_f := 0.0//float64(count_i)
 
     for i:=0 ; i<count_i; i++ {
-        sum += interface_to_float(data[i])
+        if is_interface_a_number(data[i]) {
+            sum += interface_to_float(data[i])
+            count_i = count_i + 1
+        }
     }
+    count_f = float64(count_i)
     mean = sum / count_f
     for i:=0 ; i<count_i; i++ {
-        sd += math.Pow( interface_to_float(data[i])-mean, 2)
+        if is_interface_a_number(data[i]) {
+            sd += math.Pow( interface_to_float(data[i])-mean, 2)
+        }
     }
     sd = math.Sqrt( sd / count_f)
     return sd
@@ -666,7 +1028,9 @@ func Sum(data []interface{}) float64 {
 func Max(data []interface{}) float64 {
     max := math.SmallestNonzeroFloat64
     for _,value := range data {
-        max = math.Max(max, interface_to_float(value))
+        if is_interface_a_number(value) {
+            max = math.Max(max, interface_to_float(value))
+        }
     }
     return max
 }
@@ -674,7 +1038,9 @@ func Max(data []interface{}) float64 {
 func Min(data []interface{}) float64 {
     min := math.MaxFloat64
     for _,value := range data {
-        min = math.Min(min, interface_to_float(value))
+        if is_interface_a_number(value) {
+            min = math.Min(min, interface_to_float(value))
+        }
     }
     return min
 }
@@ -754,25 +1120,45 @@ func Help() {
     fmt.Printf("Database by thomas.cherry@gmail.com\n")
     fmt.Printf("Manage table data with optional form display.\n")
     fmt.Printf("\nNote: Arguments with ? are optional\n\n")
-    format := "%4s %-7s %-12s %-40s\n"
+    
+    format := "%4s %-12s %-12s %-40s\n"
+    
     forty := strings.Repeat("-",40)
     fmt.Printf(format, "Flag", "Long", "Arguments", "Description")
-    fmt.Printf(format,"----","-------","------------",forty)
+    fmt.Printf(format,"----","------------","------------",forty)
     fmt.Printf(format, "c", "create", "name?",
         "create a row in each column, or a new named column")
     fmt.Printf(format, "r", "read", "col row", "read a column row")
     fmt.Printf(format, "u", "update", "col row val", "update a column row")
-    fmt.Printf(format, "d", "delete", "row", "delete a row from each column")
+    fmt.Printf(format, "d", "delete", "index", "delete a row by number")
+    fmt.Printf(format, "", "", "name", "delete a column by name")
+    fmt.Printf(format, "n", "rename", "src dest", "rename a column from src to dest")
+    fmt.Printf("\n")
+
+    fmt.Printf(format, "fc", "form-create", "name list", "Create a form")
+    fmt.Printf(format, "fr", "form-read", "name?", "list forms, all if name is not given")
+    fmt.Printf(format, "fu", "form-update", "name formula", "update a form")
+    fmt.Printf(format, "fd", "form-delete", "name", "delete a form")
+    fmt.Printf(format, "fn", "form-rename", "src dest", "rename a form from src to dest")
+    fmt.Printf("\n")
+
+    fmt.Printf(format, "cc", "calc-create", "name formula", "Create a calculation")
+    fmt.Printf(format, "cr", "calc-read", "name?", "list calculations, all if name is not given")
+    fmt.Printf(format, "cu", "calc-update", "name formula", "update a calculation")
+    fmt.Printf(format, "cd", "calc-delete", "name", "delete a calculation")
+    fmt.Printf(format, "cn", "calc-rename", "src dest", "rename a calculation from src to dest")
     fmt.Printf("\n")
 
     fmt.Printf(format, "t", "table", "form?",
         "display a table, optionally as a form")
     fmt.Printf(format, "sum", "summary", "form list",
-        "sumarize a form with function list: avg,count,max,min,medium,mode,min,sum,sdev")
+        "summarize a form with function list:")
+    fmt.Printf(format, "", "", "", "avg,count,max,min,medium,mode,min,nop,sum,sdev")
     fmt.Printf(format, "l", "ls list", "", "")
     fmt.Printf("\n")
 
     fmt.Printf(format, "s", "save", "", "save database to file")
+    fmt.Printf(format, "", "dump", "", "output the current data")
     fmt.Printf(format, "q", "quit", "", "quit interactive mode")
     fmt.Printf(format, "", "exit", "", "quit interactive mode")
     fmt.Printf(format, "h", "help", "", "this output")
@@ -781,6 +1167,8 @@ func Help() {
     fmt.Printf(format, "", "file", "name?", "set or print current file name")
     fmt.Printf(format, "", "rpn", "path?", "set or print current rpn command")
     fmt.Printf(format, "", "verbose", "", "toggle verbose mode")
+    fmt.Printf(format, "", "sort?", "", "output current sorting state")
+    fmt.Printf(format, "", "sort", "", "toggle the current sort mode")
 }
 
 /** used by Sub only */
@@ -848,8 +1236,128 @@ func Sub(form string) {
 
 }
 
+func FormCreate(args []string) {
+    if len(args)<2 {
+        e(ERR_MSG_FORM_create)
+    } else {
+        name := arg(args, 0, "")
+        if len(name)<1 {
+            e(ERR_MSG_FORM_REQUIRED, name)
+        } else {
+            if app_data.data.Forms[name]!=nil {
+                e(ERR_MSG_FORM_EXISTS, name)
+            } else {
+                items := args[1:]
+                app_data.data.Forms[name] = items
+            }
+        }
+    }
+}
+
+func FormRead(args []string) {
+    name := arg(args, 0, "")
+    if len(name)<1 {
+        fmt.Printf("%+v\n", app_data.data.Forms)//TODO: make this pretty
+    } else {
+        fmt.Printf("%+v\n", app_data.data.Forms[name])//TODO: make this pretty
+    }
+}
+
+func FormUpdate(args []string) {
+    if len(args)<2 {
+        e(ERR_MSG_FORM_UPDATE)
+    } else {
+        name := arg(args, 0, "")
+        if len(name)<1 {
+            e(ERR_MSG_FORM_REQUIRED)
+        } else {
+            items := args[1:]
+            if app_data.data.Forms[name] == nil {
+                e(ERR_MSG_FORM_NOT_EXISTS, name)
+            } else {
+                app_data.data.Forms[name] = items
+            }
+        }
+    }
+}
+
+func FormDelete(args []string) {
+    name := arg(args, 0, "")
+    if len(name)<1 {
+        e(ERR_MSG_FORM_REQUIRED)
+        return
+    }
+    delete (app_data.data.Forms, name)
+}
+
+func FormRename(args []string) {
+    if len(args)<2 {
+        e(ERR_MSG_FORM_RENAME);
+    } else {
+        src_name := arg(args, 0, "")
+        dest_name := arg(args, 1, "")
+        if 0<len(src_name) && 0<len(dest_name) {
+            app_data.data.Forms[dest_name] =
+                app_data.data.Forms[src_name]
+            delete(app_data.data.Forms, src_name)
+        }
+    }
+}
+
+func CalculationCreate (args []string) {
+    name := arg(args, 0, "")
+    formula := ""
+    for i:=1 ; i<len(args) ; i++ {
+        formula = formula + " " + args[i]
+    }
+    if 0<len(name) && 0<len(formula) {
+        app_data.data.Calculations[name] = formula
+    }
+}
+
+func CalculationRead (args []string) {
+    name := arg(args, 0, "")
+    if 0<len(name) {
+        fmt.Printf("%s\n", app_data.data.Calculations[name])
+    } else {
+        fmt.Printf("%v\n", app_data.data.Calculations)
+    }
+}
+
+func CalculationUpdate (args []string) {
+    name := arg(args, 0, "")
+    formula := ""
+    for i:=1 ; i<len(args) ; i++ {
+        formula = formula + " " + args[i]
+    }
+    if 0<len(name) && 0<len(formula) {
+        if _, ok := app_data.data.Calculations[name] ; ok {
+            fmt.Printf("no calculation")
+        } else {
+            app_data.data.Calculations[name] = formula
+        }
+    }
+}
+
+func CalculationDelete (args []string) {
+    name := arg(args, 0, "")
+    if 0<len(name) {
+        delete(app_data.data.Calculations, name)
+    }
+}
+
+func CalculationRename (args []string) {
+    src_name := arg(args, 0, "")
+    dest_name := arg(args, 1, "")
+    if 0<len(src_name) && 0<len(dest_name) {
+        app_data.data.Calculations[dest_name] =
+            app_data.data.Calculations[src_name]
+        delete(app_data.data.Calculations, src_name)
+    }
+}
+
 //create a sample database with 3x2 columns and rows, 2 forms, one setting
-func Initialize(file_name string) {
+func InitDataBase() DataBase {
     data := DataBase{}
     
     data.Columns = make( map[string][]interface{} )
@@ -861,17 +1369,23 @@ func Initialize(file_name string) {
     data.Columns["rab"] = []interface{}{5.0,6.0,6.0}
 
     data.Forms = make( map[string][]string )
-    data.Forms["main"] = []string{"foo","bar","foobar"}
-    data.Forms["alt"] = []string{"bar","rab","foobar"}
+    data.Forms["main"] = []string{"foo","bar","foobar", "row"}
+    data.Forms["alt"] = []string{"bar","rab","foobar", "row"}
 
     data.Calculations = make ( map[string]string )
     data.Calculations["foobar"] = "$foo $bar +"
+    data.Calculations["row"] = "#row"
 
     data.Settings = make ( map[string]string )
     data.Settings["author"] = "thomas.cherry@gmail.com"
     data.Settings["main.summary"] = "avg,sum,avg"
     data.Settings["alt.summary"] = "sum,avg,sum"
+    
+    return data
+}
 
+func Initialize(file_name string) {
+    data := InitDataBase()
     fmt.Printf("the database is %+v\n", data)
 
     //file := "data.json"
@@ -887,7 +1401,6 @@ func Initialize(file_name string) {
     } else {
         json_text, err = json.Marshal(data)
     }
-
     if err!=nil {
         fmt.Printf("error: %s\n", err)
     }
@@ -941,7 +1454,7 @@ func PrintCtrOnOut(esc string) {
 
 /**
 run the interactive mode using the third party readline library. Help the 
-library stor history, take each line and send it to ProcessLine()
+library store history, take each line and send it to ProcessLine()
 */
 func InteractiveAdvance(line *liner.State, data DataBase) {
     fmt.Printf("Database by thomas.cherry@gmail.com\n")
@@ -950,7 +1463,7 @@ func InteractiveAdvance(line *liner.State, data DataBase) {
         if name, err := line.Prompt(">"); err == nil {
             input := strings.Trim(name, " ")    //clean it
             line.AppendHistory(name)            //save it
-            ProcessLine(input, data)  //use it
+            ProcessManyLines(input, data)
         } else if err == liner.ErrPromptAborted {
             fmt.Print("Aborted")
         } else {
@@ -966,6 +1479,31 @@ func InteractiveAdvance(line *liner.State, data DataBase) {
     }
     PrintCtrOnOut(ESC_CURSOR_ON)
     v("\ndone\n")
+}
+
+func arg (args []string, index int, fallback string) string {
+    //[a, b, c, d] ; len=4
+    //i==3
+    ret := fallback
+    if index<len(args) {    //request in range
+        raw := args[index]
+        if 0<len(raw) {
+            ret = raw
+        }
+    }
+    return ret
+}
+
+func ProcessManyLines(raw_line string, data DataBase) {
+    if 0<len(raw_line) {
+        commands := strings.Split(raw_line, ";")
+        for _, raw_command := range commands {
+            command := strings.Trim(raw_command, " ")
+            if 0<len(command) {
+                ProcessLine(command, data)
+            }
+        }
+    }
 }
 
 //Process a line with a command and arguments
@@ -1050,16 +1588,78 @@ func ProcessLine(raw string, data DataBase) {
                     DeleteColumn(args[0]) //TODO: add way to delete column
                 }
             }
+        case "n", "rename":     //rename a row
+            src_name := arg(args, 0, "")
+            dest_name := arg(args, 1, "")
+            if 0<len(src_name) && 0<len(dest_name) {
+                app_data.data.Columns[dest_name] =
+                    app_data.data.Columns[src_name]
+                delete(app_data.data.Columns, src_name)
+            }
+        case "a", "append":
+            AppendTable(args, app_data.data)
+        
+        /**************************************************************/
+        /* Form CRUD */
+        
+        case "fc", "form-create":
+            FormCreate(args)
+        case "fr", "form-read":
+            FormRead(args)
+        case "fu", "form-update":
+            FormUpdate(args)
+        case "fd", "form-delete":
+            FormDelete(args)
+        case "fn", "form-rename":
+            FormRename(args)
+        
+        /**************************************************************/
+        /* Calculation CRUD */
+
+        case "cc", "calc-create":
+            CalculationCreate(args)
+        case "cr", "calc-read":
+            CalculationRead(args)
+        case "cu", "calc-update":
+            CalculationUpdate(args)
+        case "cd", "calc-delete":
+            CalculationDelete(args)
+        case "cn", "calc-rename":
+            CalculationRename (args)
+
+        /**************************************************************/
+        /* Other actions */
+
+        case "FF", "Form":
+            form := ""
+            action := "create"
+            if 0<len(args) {
+                form = args[0]
+            }
+            if 1<len(args) {
+                action = args[1]
+            }
+            FormFiller(form, action)
         case "ff", "form":
-            FormFiller(args[0], "create")
+            form := ""
+            action := "create"
+            if 0<len(args) {
+                form = args[0]
+            }
+            if 1<len(args) {
+                action = args[1]
+            }
+            FormFillerVisual(form, action)
+        case "sort?":
+            fmt.Printf("sort is %t.\n", app_data.sort)
+        case "sort":
+            app_data.sort = !app_data.sort
         case "t", "table":
             Table(args[0])
         case "sum", "summary":
-            if len(args)>=2 {
-                Summary(args[0], args[1])
-            } else {
-                fmt.Printf("here with %s.\n", args)
-            }
+            form := arg(args, 0, "main")
+            options := arg(args, 1, app_data.data.Settings[args[0]+".summary"])
+            Summary(form, options)
         case "calc", "calculate":
             Calculate()
         case "init", "initialize":
@@ -1070,27 +1670,17 @@ func ProcessLine(raw string, data DataBase) {
             Initialize(file)
         case "l", "ls", "list":
             List(data)
-        case "sub":
+        case "row":
+            Row(args, app_data.data)
+        case "-dev":
             Sub(args[0]) //- test function
-
+        case "dump":
+            Dump()
         case "f", "forms":
             fmt.Printf("%+v\n", app_data.data.Forms)//TODO: make this pretty
-        case "cf", "create-form":
-            Nop()
-        case "df", "delete-form":
-            Nop()
         
-        case "cs", "calcs":
-            Nop()
-        case "cc", "create-calc":
-            Nop()
-        case "rc", "read-calc":
-            Nop()
-        case "uc", "update-calc":
-            Nop()
-        case "dc", "delete-calc":
-
-
+        /*case "cs", "calcs":
+            Nop()*/
         case "s", "save":
             file := app_data.active_file
             if len(args)==1 || 0<len(args[0]) {
@@ -1106,11 +1696,13 @@ func main() {
     file_name := flag.String("file", "data.json", "data file")
     init_command := flag.String("command", "", "Run one command and exit")
     rpn_command := flag.String("rpn", "rpn", "command to process calculations")
+    //dry_run := flag.String("rpn", "rpn", "command to process calculations")
     flag.Parse()
 
     app_data.verbose = *verbose
     app_data.active_file = *file_name
     app_data.rpn = *rpn_command
+
     data := Load(app_data.active_file)
 
     if data == nil {
@@ -1120,10 +1712,7 @@ func main() {
         app_data.data = *data
     }
     if 0<len(*init_command) {
-        commands := strings.Split(*init_command, ";")
-        for c := range commands {
-            ProcessLine(commands[c], app_data.data)
-        }
+        ProcessManyLines(*init_command, app_data.data)
     } else {
         //readline setup
         line := liner.NewLiner()

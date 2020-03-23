@@ -13,6 +13,8 @@ import (
 /******************************************************************************/
 
 func init() {
+    
+
 }
 
 /**************************************/
@@ -78,7 +80,63 @@ func TestFloatConvert(t *testing.T) {
 
 }
 
+/*
+table;append 1 2 3 ; table ; append 1.0 ; table ; append 5 4 3 2 1 ; table
+*/
+func TestAppend(t *testing.T) {
+    data := InitDataBase()
+    //SetData(data)
+
+    expected := []string {"9","8","7"}
+    AppendTable(expected, data)
+    row := DataLength(data)-1
+    b := interface_to_string(data.Columns["bar"][row])
+    f := interface_to_string(data.Columns["foo"][row])
+    r := interface_to_string(data.Columns["rab"][row])
+    ans := []string{b,f,r}
+    check_three(t, expected, ans, "append test - exact")
+
+    source := []string {"8","7","6","5"}
+    expected = []string {"8","7","6"}
+    AppendTable(source, data)
+    row = DataLength(data)-1
+    b = interface_to_string(data.Columns["bar"][row])
+    f = interface_to_string(data.Columns["foo"][row])
+    r = interface_to_string(data.Columns["rab"][row])
+    ans = []string{b,f,r}
+    check_three(t, expected, ans, "append test - to many given")
+
+    source = []string {"4"}
+    expected = []string {"4","0.000000","0.000000"}
+    AppendTable(source, data)
+    row = DataLength(data)-1
+    b = interface_to_string(data.Columns["bar"][row])
+    f = interface_to_string(data.Columns["foo"][row])
+    r = interface_to_string(data.Columns["rab"][row])
+    ans = []string{b,f,r}
+    check_three(t, expected, ans,
+        "append test - not enough given - %s != expected[%d]=%s")
+}
+
 /**************************************/
+
+func length(data map[string][]interface{}) int {
+    length := -1
+    for _ , v := range data {
+        length = len(v)
+        break
+    }
+    return length
+}
+
+func check_three(t *testing.T, expected []string, ans []string, msg string) {
+    for i,v := range ans {
+        if v!=expected[i] {
+            t.Errorf(msg, v, i, expected[i])
+            break
+        }
+    }
+}
 
 func sline(t *testing.T, expected string, ans string, msg string) {
     if ans!=expected {

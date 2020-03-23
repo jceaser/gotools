@@ -168,6 +168,48 @@ func e(format string, args ...string) {
     fmt.Fprintf(os.Stderr, format, args)
 }
 
+func PrintStrAt(msg string, y, x int) {
+    fmt.Printf("\033[%d;%dH%s", y, x, msg)
+}
+
+func PrintCtrAt(esc string, y, x int) {
+    fmt.Printf("\033[%d;%dH\033[%s", y, x, esc)
+}
+
+/** Save the screen setup at the start of the app */
+func ScrSave() {
+    PrintCtrOnErr(ESC_SAVE_SCREEN)
+    PrintCtrOnErr(ESC_SAVE_CURSOR)
+    //PrintCtrOnErr(ESC_CURSOR_OFF)
+    PrintCtrOnErr(ESC_CLEAR_SCREEN)
+}
+
+func ColorText(text string, color int) string {
+    encoded := fmt.Sprintf("\033[0;%dm%s\033[0m", color, text)
+    return encoded
+}
+
+func Red(text string) string {
+    return ColorText(text, 31)
+}
+
+func Green(text string) string {
+    return ColorText(text, 32)
+}
+
+func Blue(text string) string {
+    return ColorText(text, 34)
+}
+
+
+
+/** Restore the screen setup from SrcSave() */
+func ScrRestore() {
+    //PrintCtrOnErr(ESC_CURSOR_ON)
+    PrintCtrOnErr(ESC_RESTORE_CURSOR)
+    PrintCtrOnErr(ESC_RESTORE_SCREEN)
+}
+
 //rpn -formula '2 3 +' -pop
 func run(formula string) string {
     //fmt.Printf("%s\n", formula)
@@ -205,6 +247,10 @@ func load(file string) *os.File {
     }
     //defer json_raw.Close()
     return json_raw
+}
+
+func SetData(data DataBase) {
+    app_data.data = data
 }
 
 func Load(file string) *DataBase {
@@ -275,10 +321,25 @@ func contains(arr []string, str string) bool {
    return false
 }
 
+func sorted_keys(data map[string][]interface{}) []string {
+    keys := make([]string, len(data))
+    i := 0
+    for k := range data {
+        keys[i] = k
+        i++
+    }
+    sort.Strings(keys)
+    return keys
+}
+
 //util method to find the length of the 'first' column
 func data_length() int {
+    return DataLength(app_data.data)
+}
+
+func DataLength(data DataBase) int {
     length := -1
-    for _ , v := range app_data.data.Columns {
+    for _ , v := range data.Columns {
         length = len(v)
         break
     }
@@ -366,6 +427,38 @@ func List(data DataBase) {
     fmt.Printf("\n")
 }
 
+func Row(args []string, data DataBase) {
+    //row form? row?
+    row := 0
+    form := ""
+    if 0<len(args) {
+        form = arg(args, 0, "")
+    }
+    if 1<len(args) {
+        //just a row number
+        raw_row, err := strconv.Atoi(arg(args, 1, "0"))
+        if err!=nil {
+            fmt.Printf("error: %v\n", err)
+            return
+        } else {
+            row = raw_row
+        }
+    }
+
+    keys := data.Forms[form]
+    //sort.Strings(keys)
+
+    for i,v := range keys {
+        if value , exists := data.Columns[v] ; exists {
+            if i!=0 {
+                fmt.Printf(" ")
+            }
+            fmt.Printf("%f", value[row])
+        }
+    }
+    fmt.Printf("\n")
+}
+
 /* Create a new column , called by c command with an argument */
 func CreateColumn(column string) {
     size := data_length()
@@ -380,6 +473,13 @@ func Create() {
     data := app_data.data.Columns
     for k,v := range data {
         app_data.data.Columns[k] = append(v, 0.0)
+    }
+}
+
+func create(data DataBase) {
+    column_data := data.Columns
+    for k,v := range column_data {
+        data.Columns[k] = append(v, 0.0)
     }
 }
 
@@ -441,6 +541,29 @@ func Delete(row int) {
 
 func DeleteColumn(column string) {
     delete(app_data.data.Columns, column)
+}
+
+func AppendTable(args []string, data DataBase) {
+    /* format: column_values */
+    arg_count := len(args)
+    column_count := len(data.Columns)
+    if arg_count<1 {
+        return
+    }
+    create(data)
+    row := DataLength(data)-1
+    index := 0
+    for _, column := range sorted_keys(data.Columns) {
+        /*v("%d of %d & %d: set '%s' to '%v', row=%d.\n",
+            index, arg_count, column_count, column, args[index], row)*/
+        data.Columns[column][row] = args[index]
+
+        //prep for next round
+        index = index + 1
+        if arg_count<=index || column_count<=index {
+            break
+        }
+    }
 }
 
 func put_cache(key string, data []interface{}) {
@@ -520,7 +643,8 @@ func FormFiller(form string, action string) {
         for asking {
             fmt.Printf("Enter in a number for column '%s'.\n", column)
             raw_response, _ := line.Prompt("#")
-            if raw_response=="stop" {
+            quiters := []string{"stop","exit","quit"}
+            if contains(quiters, raw_response) {
                 return
             }
             number, err := strconv.ParseFloat(raw_response, 64)
@@ -535,6 +659,104 @@ func FormFiller(form string, action string) {
             app_data.data.Columns[column][row] = answer
         }
     }
+}
+
+/* Use control codes to draw a form the user fills out */
+func FormFillerVisual(form string, action string) {
+ScrSave()
+
+    //Lines
+    LINE_QUESTION := 1
+    LINE_INPUT := 2
+    LINE_MESSAGE := 3
+    LINE_FORM_START := 5
+    LINE_FORM_HEAD := LINE_FORM_START - 1
+
+    dry_run := false
+    if action=="dry-run" {
+        dry_run = true
+    }
+    line := liner.NewLiner()
+    defer line.Close()
+    /*if !dry_run {
+        Create() //new row
+    }
+    row := data_length() - 1*/
+
+    temp_data := make(map[string]interface{})
+
+    //setup
+    PrintStrAt("", LINE_FORM_HEAD, 1)
+    fmt.Print(strings.Repeat(fmt.Sprintf("%c", RuneS3), 80))
+    for c_count,column := range app_data.data.Forms[form] {
+        if _, ok := app_data.data.Calculations[column] ; ok {
+            continue // this is a calculation, skip it
+        }
+        //answer := app_data.data.Columns[column][row]
+        answer := temp_data[column]
+        PrintStrAt(fmt.Sprintf("%d: %s = %f.\n", c_count, column, answer), c_count+LINE_FORM_START, 1)
+    }
+reviewing:=true
+for reviewing {
+
+    for c_count,column := range app_data.data.Forms[form] {
+        if 0<len(app_data.data.Calculations[column]) {
+            continue // this is a calculation, skip it
+        }
+        asking := true
+        answer := 0.0
+        for asking {
+            PrintStrAt(fmt.Sprintf("Enter in a number for column '%s'.\n", Green(column)), LINE_QUESTION, 1)
+            
+            PrintCtrAt(ESC_CLEAR_LINE, LINE_INPUT,1)
+            PrintStrAt(fmt.Sprintf(""), LINE_INPUT, 1)
+            raw_response, _ := line.Prompt("#")
+            PrintCtrAt(ESC_CLEAR_LINE, LINE_INPUT,1)
+            
+            quiters := []string{"stop","exit","quit"}
+            if contains(quiters, raw_response) {
+ScrRestore()
+                return
+            }
+            number, err := strconv.ParseFloat(raw_response, 64)
+            if err!=nil {
+                PrintStrAt(fmt.Sprintf(Red("that was not a number. Try again.\n")), LINE_MESSAGE,1)
+            } else {
+                PrintCtrAt(ESC_CLEAR_LINE, LINE_MESSAGE,1)
+                answer = number
+                asking = false
+            }
+        }
+        if !dry_run {
+            msg := fmt.Sprintf("%d: %s = %f\n", c_count, Green(column), answer)
+            PrintStrAt(msg, c_count+LINE_FORM_START, 1)
+            var a interface{}
+            a = answer
+            temp_data[column] = a
+            //app_data.data.Columns[column][row] = answer
+        }
+    }
+    
+    PrintCtrAt(ESC_CLEAR_LINE, LINE_QUESTION,1)
+    raw_response, _ := line.Prompt("done? yes or no: ")
+    PrintCtrAt(ESC_CLEAR_LINE, LINE_QUESTION,1)
+    
+    quiters := []string{"stop","exit","e","done","d","yes", "y", "save"}
+    if contains(quiters, raw_response) {
+        reviewing = false
+        if !dry_run {
+            Create() //new row
+            row := data_length() - 1
+            for k, v := range temp_data {
+                //should also create the new row here
+                app_data.data.Columns[k][row] = v
+            }
+        }
+    }
+}
+
+ScrRestore()
+
 }
 
 //Dump table of all columns
@@ -648,6 +870,10 @@ convert a formula to a value
 func formula_for_row(formula string, row int) string {
     words := strings.Split(formula, " ")
     for i,v := range words {
+        //this allows for the row number to be inserted in as as column
+        if strings.HasPrefix(v, "#row") {
+            words[i] = fmt.Sprintf("%d",row)
+        }
         if strings.HasPrefix(v, "$") {
             key := v[1:]
             columns := app_data.data.Columns[key]
@@ -1131,7 +1357,7 @@ func CalculationRename (args []string) {
 }
 
 //create a sample database with 3x2 columns and rows, 2 forms, one setting
-func Initialize(file_name string) {
+func InitDataBase() DataBase {
     data := DataBase{}
     
     data.Columns = make( map[string][]interface{} )
@@ -1143,17 +1369,23 @@ func Initialize(file_name string) {
     data.Columns["rab"] = []interface{}{5.0,6.0,6.0}
 
     data.Forms = make( map[string][]string )
-    data.Forms["main"] = []string{"foo","bar","foobar"}
-    data.Forms["alt"] = []string{"bar","rab","foobar"}
+    data.Forms["main"] = []string{"foo","bar","foobar", "row"}
+    data.Forms["alt"] = []string{"bar","rab","foobar", "row"}
 
     data.Calculations = make ( map[string]string )
     data.Calculations["foobar"] = "$foo $bar +"
+    data.Calculations["row"] = "#row"
 
     data.Settings = make ( map[string]string )
     data.Settings["author"] = "thomas.cherry@gmail.com"
     data.Settings["main.summary"] = "avg,sum,avg"
     data.Settings["alt.summary"] = "sum,avg,sum"
+    
+    return data
+}
 
+func Initialize(file_name string) {
+    data := InitDataBase()
     fmt.Printf("the database is %+v\n", data)
 
     //file := "data.json"
@@ -1231,7 +1463,7 @@ func InteractiveAdvance(line *liner.State, data DataBase) {
         if name, err := line.Prompt(">"); err == nil {
             input := strings.Trim(name, " ")    //clean it
             line.AppendHistory(name)            //save it
-            ProcessLine(input, data)  //use it
+            ProcessManyLines(input, data)
         } else if err == liner.ErrPromptAborted {
             fmt.Print("Aborted")
         } else {
@@ -1260,6 +1492,18 @@ func arg (args []string, index int, fallback string) string {
         }
     }
     return ret
+}
+
+func ProcessManyLines(raw_line string, data DataBase) {
+    if 0<len(raw_line) {
+        commands := strings.Split(raw_line, ";")
+        for _, raw_command := range commands {
+            command := strings.Trim(raw_command, " ")
+            if 0<len(command) {
+                ProcessLine(command, data)
+            }
+        }
+    }
 }
 
 //Process a line with a command and arguments
@@ -1352,6 +1596,8 @@ func ProcessLine(raw string, data DataBase) {
                     app_data.data.Columns[src_name]
                 delete(app_data.data.Columns, src_name)
             }
+        case "a", "append":
+            AppendTable(args, app_data.data)
         
         /**************************************************************/
         /* Form CRUD */
@@ -1384,7 +1630,7 @@ func ProcessLine(raw string, data DataBase) {
         /**************************************************************/
         /* Other actions */
 
-        case "ff", "form":
+        case "FF", "Form":
             form := ""
             action := "create"
             if 0<len(args) {
@@ -1394,6 +1640,16 @@ func ProcessLine(raw string, data DataBase) {
                 action = args[1]
             }
             FormFiller(form, action)
+        case "ff", "form":
+            form := ""
+            action := "create"
+            if 0<len(args) {
+                form = args[0]
+            }
+            if 1<len(args) {
+                action = args[1]
+            }
+            FormFillerVisual(form, action)
         case "sort?":
             fmt.Printf("sort is %t.\n", app_data.sort)
         case "sort":
@@ -1414,6 +1670,8 @@ func ProcessLine(raw string, data DataBase) {
             Initialize(file)
         case "l", "ls", "list":
             List(data)
+        case "row":
+            Row(args, app_data.data)
         case "-dev":
             Sub(args[0]) //- test function
         case "dump":
@@ -1438,6 +1696,7 @@ func main() {
     file_name := flag.String("file", "data.json", "data file")
     init_command := flag.String("command", "", "Run one command and exit")
     rpn_command := flag.String("rpn", "rpn", "command to process calculations")
+    //dry_run := flag.String("rpn", "rpn", "command to process calculations")
     flag.Parse()
 
     app_data.verbose = *verbose
@@ -1453,10 +1712,7 @@ func main() {
         app_data.data = *data
     }
     if 0<len(*init_command) {
-        commands := strings.Split(*init_command, ";")
-        for c := range commands {
-            ProcessLine(commands[c], app_data.data)
-        }
+        ProcessManyLines(*init_command, app_data.data)
     } else {
         //readline setup
         line := liner.NewLiner()

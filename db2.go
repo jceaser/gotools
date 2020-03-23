@@ -600,6 +600,8 @@ func Summary(form string, args string) {
                         out.WriteString( fmt.Sprintf("%f", Mode(data)) )
                     case "mn", "min":
                         out.WriteString( fmt.Sprintf("%f", Min(data)) )
+                    case "", "n", "none":
+                        out.WriteString("")
                     case "s", "sum":
                         out.WriteString( fmt.Sprintf("%f", Sum(data)) )
                     case "sd", "sdev":

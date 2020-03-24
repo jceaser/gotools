@@ -187,6 +187,22 @@ func PrintCtrAt(esc string, y, x int) {
     fmt.Printf("\033[%d;%dH\033[%s", y, x, esc)
 }
 
+/**
+print out an esc control
+@param esc control code to print out
+*/
+func PrintCtrOnErr(esc string) {
+    fmt.Fprintf(os.Stderr, "\033[%s", esc)
+}
+
+/**
+print out an esc control
+@param esc control code to print out
+*/
+func PrintCtrOnOut(esc string) {
+    fmt.Fprintf(os.Stdout, "\033[%s", esc)
+}
+
 /** Save the screen setup at the start of the app */
 func ScrSave() {
     PrintCtrOnErr(ESC_SAVE_SCREEN)
@@ -338,6 +354,21 @@ func DumpJson() {
 /**************************************/
 /* helpers */
 
+/** look for an option in an array and if not found use the fallback */
+func arg (args []string, index int, fallback string) string {
+    //[a, b, c, d] ; len=4
+    //i==3
+    ret := fallback
+    if index<len(args) {    //request in range
+        raw := args[index]
+        if 0<len(raw) {
+            ret = raw
+        }
+    }
+    return ret
+}
+
+/** check if a string is contained in a list of strings */
 func contains(arr []string, str string) bool {
    for _, a := range arr {
       if a == str {
@@ -347,6 +378,7 @@ func contains(arr []string, str string) bool {
    return false
 }
 
+/** return sorted keys from a map of interfaces */
 func sorted_keys(data map[string][]interface{}) []string {
     keys := make([]string, len(data))
     i := 0
@@ -358,11 +390,12 @@ func sorted_keys(data map[string][]interface{}) []string {
     return keys
 }
 
-//util method to find the length of the 'first' column
+/* util method to find the length of the 'first' column */
 func data_length() int {
     return DataLength(app_data.data)
 }
 
+/* find the length of the 'first' column */
 func DataLength(data DataBase) int {
     length := -1
     for _ , v := range data.Columns {
@@ -447,6 +480,51 @@ func interface_to_float(raw interface{}) float64 {
     return ret
 }
 
+/** cache the calculated results */
+func put_cache(key string, data []interface{}) {
+    if app_data.column_cache==nil {
+        app_data.column_cache = make(map[string][]interface{})
+    }
+    app_data.column_cache[key] = data
+}
+
+/** get cached calculated results */
+func get_cache(key string) []interface{} {
+    if app_data.column_cache==nil {
+        app_data.column_cache = make(map[string][]interface{})
+    }
+    data := app_data.column_cache[key]
+    
+    return data
+}
+
+/**
+convert a formula to a value
+@param formula calculation to make $c1 $c2 +
+@param row 0 based row count
+@return result
+*/
+func formula_for_row(formula string, row int) string {
+    words := strings.Split(formula, " ")
+    for i,v := range words {
+        //this allows for the row number to be inserted in as as column
+        if strings.HasPrefix(v, "#row") {
+            words[i] = fmt.Sprintf("%d",row)
+        }
+        if strings.HasPrefix(v, "$") {
+            key := v[1:]
+            columns := app_data.data.Columns[key]
+            if columns!=nil {
+                column := fmt.Sprintf("%f",columns[row])
+                words[i] = column
+            }
+        }
+    }
+    ret := strings.Join(words, " ")
+    ret = run(ret)
+    return ret
+}
+
 /******************************************************************************/
 // #mark Commands
 
@@ -499,23 +577,24 @@ func Row(args []string, data DataBase) {
 }
 
 /* Create a new column , called by c command with an argument */
-func CreateColumn(column string) {
+func create_column(column string) {
+    CreateColumn(app_data.data, column)
+}
+
+func CreateColumn(data DataBase, column string) {
     size := data_length()
-    app_data.data.Columns[column] = make( []interface{}, 0)
+    data.Columns[column] = make( []interface{}, 0)
     for i:=0 ; i<size; i++ {
-        app_data.data.Columns[column]=append(app_data.data.Columns[column],0.0)
+        data.Columns[column]=append(data.Columns[column],0.0)
     }
 }
 
 // add a row to all columns. called by c command with no arguments
-func Create() {
-    data := app_data.data.Columns
-    for k,v := range data {
-        app_data.data.Columns[k] = append(v, 0.0)
-    }
+func create() {
+    Create(app_data.data)
 }
 
-func create(data DataBase) {
+func Create(data DataBase) {
     column_data := data.Columns
     for k,v := range column_data {
         data.Columns[k] = append(v, 0.0)
@@ -523,27 +602,27 @@ func create(data DataBase) {
 }
 
 //read a specific value from the column table ; called with read command
-func Read(key string, row int) {
-    if app_data.data.Columns[key]==nil {
+func Read(data DataBase, key string, row int) {
+    if data.Columns[key]==nil {
         fmt.Fprintf(os.Stderr, ERR_MSG_COL_NOT_FOUND, key)
     } else {
-        max := len(app_data.data.Columns[key])-1
+        max := len(data.Columns[key])-1
         if max<row || row<0 {
             fmt.Fprintf(os.Stderr, ERR_MSG_ROW_BETWEEN, max)
         } else {
-            data := app_data.data.Columns[key][row]
+            data := data.Columns[key][row]
             fmt.Printf("%s[%d]=%+v\n", key, row, data)
         }
     }
 }
 
 //update a specific value from the column table
-func Update(key string, row int, value string) {
+func Update(data DataBase, key string, row int, value string) {
     //if value can be turned into a number, then stuf it as a number
     number, err := strconv.ParseFloat(value, 64)
     if err==nil {
         //no error, value is a number
-        column := app_data.data.Columns[key]
+        column := data.Columns[key]
         if column == nil {
             fmt.Fprintf(os.Stderr, ERR_MSG_COL_NOT_FOUND, key)
         } else {
@@ -551,7 +630,7 @@ func Update(key string, row int, value string) {
             if max<row || row<0 {
                 fmt.Fprintf(os.Stderr, ERR_MSG_ROW_BETWEEN, max)
             } else {
-                app_data.data.Columns[key][row] = number
+                data.Columns[key][row] = number
             }
         }
     } else {
@@ -562,8 +641,8 @@ func Update(key string, row int, value string) {
 }
 
 //delete a row from all columns
-func Delete(row int) {
-    for k,v := range app_data.data.Columns {
+func Delete(data DataBase, row int) {
+    for k,v := range data.Columns {
         max := len(v)-1
         //while we have the first column, check the length before going on
         if max<row || row<0 {
@@ -573,7 +652,7 @@ func Delete(row int) {
             copy( v[row:], v[row+1:] )
             v[len(v)-1] = ""
             v = v[:len(v)-1]
-            app_data.data.Columns[k] = v
+            data.Columns[k] = v
         }
     }
 }
@@ -582,14 +661,14 @@ func DeleteColumn(column string) {
     delete(app_data.data.Columns, column)
 }
 
-func AppendTable(args []string, data DataBase) {
+func AppendTable(data DataBase, args []string) {
     /* format: column_values */
     arg_count := len(args)
     column_count := len(data.Columns)
     if arg_count<1 {
         return
     }
-    create(data)
+    Create(data)
     row := DataLength(data)-1
     index := 0
     for _, column := range sorted_keys(data.Columns) {
@@ -603,22 +682,6 @@ func AppendTable(args []string, data DataBase) {
             break
         }
     }
-}
-
-func put_cache(key string, data []interface{}) {
-    if app_data.column_cache==nil {
-        app_data.column_cache = make(map[string][]interface{})
-    }
-    app_data.column_cache[key] = data
-}
-
-func get_cache(key string) []interface{} {
-    if app_data.column_cache==nil {
-        app_data.column_cache = make(map[string][]interface{})
-    }
-    data := app_data.column_cache[key]
-    
-    return data
 }
 
 func Calculate() {
@@ -670,7 +733,7 @@ func FormFiller(form string, action string) {
     line := liner.NewLiner()
     defer line.Close()
     if !dry_run {
-        Create() //new row
+        Create(app_data.data) //new row
     }
     row := data_length() - 1
     for _,column := range app_data.data.Forms[form] {
@@ -784,7 +847,7 @@ ScrRestore()
     if contains(quiters, raw_response) {
         reviewing = false
         if !dry_run {
-            Create() //new row
+            Create(app_data.data) //new row
             row := data_length() - 1
             for k, v := range temp_data {
                 //should also create the new row here
@@ -898,33 +961,6 @@ func table_worker(form string) (bytes.Buffer, []bytes.Buffer, []string) {
         })
     }
     return header, rows, keys
-}
-
-/**
-convert a formula to a value
-@param formula calculation to make $c1 $c2 +
-@param row 0 based row count
-@return result
-*/
-func formula_for_row(formula string, row int) string {
-    words := strings.Split(formula, " ")
-    for i,v := range words {
-        //this allows for the row number to be inserted in as as column
-        if strings.HasPrefix(v, "#row") {
-            words[i] = fmt.Sprintf("%d",row)
-        }
-        if strings.HasPrefix(v, "$") {
-            key := v[1:]
-            columns := app_data.data.Columns[key]
-            if columns!=nil {
-                column := fmt.Sprintf("%f",columns[row])
-                words[i] = column
-            }
-        }
-    }
-    ret := strings.Join(words, " ")
-    ret = run(ret)
-    return ret
 }
 
 const (
@@ -1456,6 +1492,7 @@ func Initialize(file_name string) {
 /******************************************************************************/
 // #mark - application functions
 
+/** setup the prompt reader */
 func setup_liner(line *liner.State) {
     line.SetCtrlCAborts(true)
 
@@ -1474,22 +1511,6 @@ func setup_liner(line *liner.State) {
         line.ReadHistory(f)
         f.Close()
     }
-}
-
-/**
-print out an esc control
-@param esc control code to print out
-*/
-func PrintCtrOnErr(esc string) {
-    fmt.Fprintf(os.Stderr, "\033[%s", esc)
-}
-
-/**
-print out an esc control
-@param esc control code to print out
-*/
-func PrintCtrOnOut(esc string) {
-    fmt.Fprintf(os.Stdout, "\033[%s", esc)
 }
 
 /**
@@ -1519,19 +1540,6 @@ func InteractiveAdvance(line *liner.State, data DataBase) {
     }
     PrintCtrOnOut(ESC_CURSOR_ON)
     v("\ndone\n")
-}
-
-func arg (args []string, index int, fallback string) string {
-    //[a, b, c, d] ; len=4
-    //i==3
-    ret := fallback
-    if index<len(args) {    //request in range
-        raw := args[index]
-        if 0<len(raw) {
-            ret = raw
-        }
-    }
-    return ret
 }
 
 func ProcessManyLines(raw_line string, data DataBase) {
@@ -1591,9 +1599,9 @@ func ProcessLine(raw string, data DataBase) {
                 fmt.Fprintf(os.Stderr, ERR_MSG_CREATE_ARGS)
             } else {
                 if len(args[0])==0 {
-                    Create()
+                    Create(app_data.data)
                 } else {            //create column
-                    CreateColumn(args[0])
+                    CreateColumn(app_data.data, args[0])
                 }
             }
         case "r", "read":       //read column row
@@ -1603,7 +1611,7 @@ func ProcessLine(raw string, data DataBase) {
                 column := args[0]
                 row, err := strconv.Atoi(args[1])
                 if err==nil {
-                    Read( column, row )
+                    Read(app_data.data, column, row )
                 }
             }
         case "u", "update":     //update column row value
@@ -1614,7 +1622,7 @@ func ProcessLine(raw string, data DataBase) {
                 row, row_err := strconv.Atoi(args[1])
                 value := args[2]
                 if row_err==nil {
-                    Update( column, row, value)
+                    Update(app_data.data, column, row, value)
                 }
             }
         case "d", "delete":     //delete row
@@ -1623,7 +1631,7 @@ func ProcessLine(raw string, data DataBase) {
             } else {
                 row, err := strconv.Atoi(args[0])
                 if err==nil {
-                    Delete(row)
+                    Delete(app_data.data, row)
                 } else {            //delete column
                     DeleteColumn(args[0]) //TODO: add way to delete column
                 }
@@ -1637,7 +1645,7 @@ func ProcessLine(raw string, data DataBase) {
                 delete(app_data.data.Columns, src_name)
             }
         case "a", "append":
-            AppendTable(args, app_data.data)
+            AppendTable(app_data.data, args)
         
         /**************************************************************/
         /* Form CRUD */

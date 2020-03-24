@@ -156,22 +156,33 @@ const (
     ERR_MSG_FORM_RENAME = "form-rename <name> <src> <dest>\n"
 )
 
-// #mark hi
+// #mark - utility functions
 
+/** print only in verbose mode */
 func v(format string, args ...string) {
     if app_data.verbose {
         fmt.Printf(format, args)
     }
 }
 
+/** print to error */
 func e(format string, args ...string) {
     fmt.Fprintf(os.Stderr, format, args)
 }
 
+/** print to error but only in verbose mode */
+func ev(format string, args ...string) {
+    if app_data.verbose {
+        fmt.Fprintf(os.Stderr, format, args)
+    }
+}
+
+/** print to a specific terminal screen location */
 func PrintStrAt(msg string, y, x int) {
     fmt.Printf("\033[%d;%dH%s", y, x, msg)
 }
 
+/** print to a terminal code */
 func PrintCtrAt(esc string, y, x int) {
     fmt.Printf("\033[%d;%dH\033[%s", y, x, esc)
 }
@@ -184,6 +195,7 @@ func ScrSave() {
     PrintCtrOnErr(ESC_CLEAR_SCREEN)
 }
 
+/** print a string in a color */
 func ColorText(text string, color int) string {
     encoded := fmt.Sprintf("\033[0;%dm%s\033[0m", color, text)
     return encoded
@@ -201,8 +213,6 @@ func Blue(text string) string {
     return ColorText(text, 34)
 }
 
-
-
 /** Restore the screen setup from SrcSave() */
 func ScrRestore() {
     //PrintCtrOnErr(ESC_CURSOR_ON)
@@ -210,9 +220,12 @@ func ScrRestore() {
     PrintCtrOnErr(ESC_RESTORE_SCREEN)
 }
 
-//rpn -formula '2 3 +' -pop
+/**
+Run the external 'rpn' command
+rpn -formula '2 3 +' -pop
+*/
 func run(formula string) string {
-    //fmt.Printf("%s\n", formula)
+    ev("Calling the command: '%s'.\n", formula)
     out, err := exec.Command(app_data.rpn, "-formula", formula, "-pop").Output()
     if err != nil {
         fmt.Printf("%s", err)
@@ -222,12 +235,22 @@ func run(formula string) string {
     return ret
 }
 
+/**************************************/
+/* manage load and unload database functions */
+
+/** set the internal data value, use this to setup tests */
+func SetData(data DataBase) {
+    app_data.data = data
+}
+
+/** load a json data base file */
 func load(file string) *os.File {
     json_raw, err := os.Open(file)
     if err!=nil {
         if os.IsNotExist(err) {
             //create the file because it does not exist
             v("Creating data file %s\n", file)
+            //todo: this looks like the wrong default
             sample := []byte("{}")
             err := ioutil.WriteFile(file, sample, 0644)
             if err!=nil {
@@ -249,10 +272,7 @@ func load(file string) *os.File {
     return json_raw
 }
 
-func SetData(data DataBase) {
-    app_data.data = data
-}
-
+/** load a database from a file */
 func Load(file string) *DataBase {
     v("Loading file %s\n", file ) 
     json_raw := load(file)
@@ -272,6 +292,7 @@ func Load(file string) *DataBase {
     return nil
 }
 
+/** save the database to a file */
 func Save(data DataBase, file string) {
     var json_text []byte
     var err error
@@ -297,7 +318,8 @@ func Save(data DataBase, file string) {
     }
 }
 
-func Dump() {
+/** print out json */
+func DumpJson() {
     var json_text []byte
     var err error
     if app_data.indent_file {
@@ -311,6 +333,10 @@ func Dump() {
         fmt.Printf("Error: %s\n", err)
     }
 }
+
+/* database functions
+/**************************************/
+/* helpers */
 
 func contains(arr []string, str string) bool {
    for _, a := range arr {
@@ -344,6 +370,15 @@ func DataLength(data DataBase) int {
         break
     }
     return length
+}
+
+func FirstForm(data DataBase) string{
+    name := "def"
+    for k, _ := range data.Forms {
+        name = k
+        break
+    }
+    return name
 }
 
 func is_interface_a_string(raw interface{}) bool {
@@ -428,11 +463,14 @@ func List(data DataBase) {
 }
 
 func Row(args []string, data DataBase) {
+    var header bytes.Buffer
+    var body bytes.Buffer
+
     //row form? row?
     row := 0
-    form := ""
+    form := FirstForm(data)
     if 0<len(args) {
-        form = arg(args, 0, "")
+        form = arg(args, 0, FirstForm(data))
     }
     if 1<len(args) {
         //just a row number
@@ -446,17 +484,18 @@ func Row(args []string, data DataBase) {
     }
 
     keys := data.Forms[form]
-    //sort.Strings(keys)
 
     for i,v := range keys {
-        if value , exists := data.Columns[v] ; exists {
+        if value, exists := data.Columns[v] ; exists {
             if i!=0 {
-                fmt.Printf(" ")
+                header.WriteString(" ")
+                body.WriteString(" ")
             }
-            fmt.Printf("%f", value[row])
+            header.WriteString(v)
+            body.WriteString(fmt.Sprintf("%f", value[row]))
         }
     }
-    fmt.Printf("\n")
+    fmt.Printf("%s\n%s\n", string(header.Bytes()), string(body.Bytes()))
 }
 
 /* Create a new column , called by c command with an argument */
@@ -1155,6 +1194,7 @@ func Help() {
         "summarize a form with function list:")
     fmt.Printf(format, "", "", "", "avg,count,max,min,medium,mode,min,nop,sum,sdev")
     fmt.Printf(format, "l", "ls list", "", "")
+    fmt.Printf(format, "", "row", "form row?", "row from form")
     fmt.Printf("\n")
 
     fmt.Printf(format, "s", "save", "", "save database to file")
@@ -1675,7 +1715,7 @@ func ProcessLine(raw string, data DataBase) {
         case "-dev":
             Sub(args[0]) //- test function
         case "dump":
-            Dump()
+            DumpJson()
         case "f", "forms":
             fmt.Printf("%+v\n", app_data.data.Forms)//TODO: make this pretty
         

@@ -1006,7 +1006,6 @@ func Summary(form string, args string) {
                     for i,cached_value := range raw {
                         data[i] = cached_value
                     }
-fmt.Printf("found cached calculations: %v\n", data[i])
                 }
                 if 0<i {
                     out.WriteString( app_data.format.divider )

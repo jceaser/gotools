@@ -13,7 +13,6 @@ import (
 /******************************************************************************/
 
 func init() {
-    
 
 }
 
@@ -88,7 +87,7 @@ func TestAppend(t *testing.T) {
     //SetData(data)
 
     expected := []string {"9","8","7"}
-    AppendTable(expected, data)
+    AppendTable(data, expected)
     row := DataLength(data)-1
     b := interface_to_string(data.Columns["bar"][row])
     f := interface_to_string(data.Columns["foo"][row])
@@ -98,7 +97,7 @@ func TestAppend(t *testing.T) {
 
     source := []string {"8","7","6","5"}
     expected = []string {"8","7","6"}
-    AppendTable(source, data)
+    AppendTable(data, source)
     row = DataLength(data)-1
     b = interface_to_string(data.Columns["bar"][row])
     f = interface_to_string(data.Columns["foo"][row])
@@ -108,7 +107,7 @@ func TestAppend(t *testing.T) {
 
     source = []string {"4"}
     expected = []string {"4","0.000000","0.000000"}
-    AppendTable(source, data)
+    AppendTable(data, source)
     row = DataLength(data)-1
     b = interface_to_string(data.Columns["bar"][row])
     f = interface_to_string(data.Columns["foo"][row])

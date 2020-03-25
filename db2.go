@@ -48,7 +48,9 @@ type DataBase struct {
 }
 
 type Format struct {
+    markdown bool
     divider string
+    divider_pipe string
     template_float string
     template_string string
     template_decimal string
@@ -83,7 +85,9 @@ var app_data = App_Data{backlog_command:"",
     format: Format{template_float:"%10.3f",
         template_string:"%10s",
         template_decimal:"%10d",
-        divider:" | "},
+        markdown:false,
+        divider:"│",
+        divider_pipe:"|"},
     sort:true}
 
 const (
@@ -576,22 +580,12 @@ func Row(args []string, data DataBase) {
     fmt.Printf("%s\n%s\n", string(header.Bytes()), string(body.Bytes()))
 }
 
-/* Create a new column , called by c command with an argument */
-func create_column(column string) {
-    CreateColumn(app_data.data, column)
-}
-
 func CreateColumn(data DataBase, column string) {
     size := data_length()
     data.Columns[column] = make( []interface{}, 0)
     for i:=0 ; i<size; i++ {
         data.Columns[column]=append(data.Columns[column],0.0)
     }
-}
-
-// add a row to all columns. called by c command with no arguments
-func create() {
-    Create(app_data.data)
 }
 
 func Create(data DataBase) {
@@ -618,25 +612,22 @@ func Read(data DataBase, key string, row int) {
 
 //update a specific value from the column table
 func Update(data DataBase, key string, row int, value string) {
-    //if value can be turned into a number, then stuf it as a number
-    number, err := strconv.ParseFloat(value, 64)
-    if err==nil {
-        //no error, value is a number
-        column := data.Columns[key]
-        if column == nil {
-            fmt.Fprintf(os.Stderr, ERR_MSG_COL_NOT_FOUND, key)
+    column := data.Columns[key]
+    if column == nil {
+        fmt.Fprintf(os.Stderr, ERR_MSG_COL_NOT_FOUND, key)
+    } else {
+        max := len(column)-1
+        if row<0 || max<row {
+            fmt.Fprintf(os.Stderr, ERR_MSG_ROW_BETWEEN, max)
         } else {
-            max := len(column)-1
-            if max<row || row<0 {
-                fmt.Fprintf(os.Stderr, ERR_MSG_ROW_BETWEEN, max)
-            } else {
+            //if value can be turned into a number, then stuff it as a number
+            if number, err := strconv.ParseFloat(value, 64) ; err==nil {
+                //no error, value is a number
                 data.Columns[key][row] = number
+            } else {
+                data.Columns[key][row] = value
             }
         }
-    } else {
-        //use as is, really do this?
-        //app_data.data.Columns[key][row] = value
-        fmt.Fprintf(os.Stderr, ERR_MSG_VALUE_NUM, value)
     }
 }
 
@@ -657,8 +648,8 @@ func Delete(data DataBase, row int) {
     }
 }
 
-func DeleteColumn(column string) {
-    delete(app_data.data.Columns, column)
+func DeleteColumn(data DataBase, column string) {
+    delete(data.Columns, column)
 }
 
 func AppendTable(data DataBase, args []string) {
@@ -672,9 +663,11 @@ func AppendTable(data DataBase, args []string) {
     row := DataLength(data)-1
     index := 0
     for _, column := range sorted_keys(data.Columns) {
-        /*v("%d of %d & %d: set '%s' to '%v', row=%d.\n",
-            index, arg_count, column_count, column, args[index], row)*/
-        data.Columns[column][row] = args[index]
+        if value, err := strconv.ParseFloat( args[index], 64 ) ; err==nil {
+            data.Columns[column][row] = value
+        } else {
+            data.Columns[column][row] = args[index]
+        }
 
         //prep for next round
         index = index + 1
@@ -861,34 +854,78 @@ ScrRestore()
 
 }
 
+/**
+level - 0=top, 1=middle, 2=bottom
+*/
+func table_divider (markdown bool, columns int, level int) string {
+    var sbuf bytes.Buffer
+    if !markdown {
+        if level==0 {
+            sbuf.WriteRune(RuneULCorner)
+        } else if level==1 {
+            sbuf.WriteRune(RuneLTee)
+        } else if level==2 {
+            sbuf.WriteRune(RuneLLCorner)
+        }
+    }
+    for i:=0 ; i<=columns ; i++ {
+        if markdown {
+            sbuf.WriteString(app_data.format.divider_pipe)
+            sbuf.WriteString(fmt.Sprintf(app_data.format.template_string, "---------"))
+        } else {
+            if 0<i && i<=columns {
+                if level==0 {
+                    sbuf.WriteRune(RuneTTee) //'┬'
+                } else if level==1 {
+                    sbuf.WriteRune(RunePlus) //"┼"
+                } else if level==2 {
+                    sbuf.WriteRune(RuneBTee) //┴
+                }
+            }
+            sbuf.WriteString(fmt.Sprintf(app_data.format.template_string, "──────────"))
+        }
+    }
+    if markdown {
+        sbuf.WriteString(app_data.format.divider_pipe)
+    } else {
+        if level==0 {
+            sbuf.WriteRune(RuneURCorner)
+        } else if level==1 {
+            sbuf.WriteRune(RuneRTee)
+        } else if level==2 {
+            sbuf.WriteRune(RuneLRCorner)
+        }
+    }
+    return sbuf.String()
+}
+
 //Dump table of all columns
 //* @param form name of the form to dump out, empty for entire table
 func Table(form string) {
-    header, rows, keys := table_worker(form)
-
-    //create a dashed line, it will be used twice
-    var sbuf bytes.Buffer
-    for i:=0 ; i<len(keys) ; i++ {
-//fmt.Printf("here with %d in %v\n", i, keys)
-        if 0<i {
-            sbuf.WriteString(app_data.format.divider)
-        }
-        sbuf.WriteString(fmt.Sprintf(app_data.format.template_string, "---------"))
+    markdown := app_data.format.markdown
+    var divider string
+    if markdown {
+        divider = app_data.format.divider_pipe
+    } else {
+        divider = app_data.format.divider
     }
-
+    header, rows, keys := table_worker(form, divider)
+    
     //print out the table
-    buffer_line := sbuf.String()
+    if !markdown {
+        fmt.Printf("%s\n", table_divider(markdown, len(keys), 0))
+    }
     fmt_lined := (app_data.format.template_string + "\n")
     fmt.Printf( fmt_lined , string(header.Bytes()))
-    fmt.Printf("%s\n", buffer_line)
+    fmt.Printf("%s\n", table_divider(markdown, len(keys), 1))
     for i := range rows {
         fmt.Printf("%v\n", string(rows[i].Bytes()))
     }
-    fmt.Printf("%s\n", buffer_line)
-
-
+    if !markdown {
+        fmt.Printf("%s\n", table_divider(markdown, len(keys), 2))
+    }
 }
-func table_worker(form string) (bytes.Buffer, []bytes.Buffer, []string) {
+func table_worker(form string, divider string) (bytes.Buffer, []bytes.Buffer, []string) {
     var header bytes.Buffer
     var rows []bytes.Buffer
     var keys []string
@@ -904,16 +941,17 @@ func table_worker(form string) (bytes.Buffer, []bytes.Buffer, []string) {
         //use the form list
         keys = app_data.data.Forms[form]
     } else {
-        //use all columns ; not any calculations
-        keys = make([]string, 0, len(app_data.data.Columns))
-        for k := range app_data.data.Columns {
-            keys = append(keys, k)
-        }
-        sort.Strings(keys)
+        //always sort because map is not order consistent
+        keys = sorted_keys(app_data.data.Columns)
     }
     
     //loop throug all the column and calculation keys
-    for _,k := range keys {
+    max := len(keys)-1
+    for index,k := range keys {
+        last := false
+        if max<=index {
+            last = true
+        }
         var formula = ""
         values := app_data.data.Columns[k] //return a list of strings
 
@@ -932,16 +970,19 @@ func table_worker(form string) (bytes.Buffer, []bytes.Buffer, []string) {
             put_cache(k, calc_values)
             values = calc_values
         }
-        if !first {
-            header.WriteString( app_data.format.divider )
-        }
+        //if !first {
+            header.WriteString( divider )
+        //}
         header.WriteString( fmt.Sprintf(app_data.format.template_string, k) )
-        
+        if last {
+            header.WriteString(fmt.Sprintf("%s%10s%s", divider, "row", divider ))
+        }
         for i := range values {
             //should this section be outside of the loop
             if !first {
-                rows[i].WriteString( app_data.format.divider )
             }
+                rows[i].WriteString( divider )
+            //}
             column := ""
             if i<len(values) {
                 format := app_data.format.template_float
@@ -951,6 +992,9 @@ func table_worker(form string) (bytes.Buffer, []bytes.Buffer, []string) {
                 column = fmt.Sprintf(format, values[i])
             }
             rows[i].WriteString( column )
+            if last {
+                rows[i].WriteString(fmt.Sprintf("%s%10d%s", divider, i, divider))
+            }
         }
         first = false
     }
@@ -1632,7 +1676,7 @@ func ProcessLine(raw string, data DataBase) {
                 if err==nil {
                     Delete(app_data.data, row)
                 } else {            //delete column
-                    DeleteColumn(args[0]) //TODO: add way to delete column
+                    DeleteColumn(app_data.data, args[0]) //TODO: add way to delete column
                 }
             }
         case "n", "rename":     //rename a row
@@ -1697,6 +1741,10 @@ func ProcessLine(raw string, data DataBase) {
                 action = args[1]
             }
             FormFillerVisual(form, action)
+        case "markdown?":
+            fmt.Printf("markdown is %t.\n", app_data.format.markdown)
+        case "markdown":
+            app_data.format.markdown = !app_data.format.markdown
         case "sort?":
             fmt.Printf("sort is %t.\n", app_data.sort)
         case "sort":

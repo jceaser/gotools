@@ -25,8 +25,12 @@ _testmain.go
 
 console
 counter
+db
+db2
 iif
+isodate
 roll
+rpn
 scale
 striper
 

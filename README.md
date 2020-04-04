@@ -5,6 +5,7 @@ A collection of command line tools written in Go
 * counter - count up or down with big numbers
 * iif - inline if for scripting
 * roll - rotate files like logs
+* rpn - an RPN calculator
 * scale - console line chart scroler
 * striper - remove spaces from lines or words
 
@@ -16,6 +17,17 @@ returns a value if the left and right operands meet a condition
 
 Usage:
     iff -left 10 -test '==' -right 10    
+
+### rpn ###
+A Reverse Polish Notation calculator
+
+    rpn --interactive
+    rpn --formula 'formula'
+    echo 'formula' | rpn
+        --pop return only last value
+        --verbose print out some extra details
+
+Use: `2 3 + print`
 
 ### scale ###
 

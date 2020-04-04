@@ -3,8 +3,6 @@ package main
 import ("fmt"
     "bufio"
     "os"
-    //"io"
-    //"bytes"
     "flag"
     "math"
     "math/rand"
@@ -13,26 +11,26 @@ import ("fmt"
     "syscall"
     "unsafe"
     "strings"
-    //"os/exec"
     "path/filepath"
     "github.com/peterh/liner"
     )
 
 /****/
 
+/*
+Function Data holds the function to call and it's description
+*/
 type func_data struct {
     cmd func()
     doc string
 }
 
 var (
-    history_fn = filepath.Join(os.TempDir(), ".rpn_history")
-    names      = []string{"print", "dump", "quit"}
+    history_fn = filepath.Join(os.TempDir(), ".rpn_history")    //used by liner
+    names      = []string{"print", "dump", "quit"}              //used by liner
     
-    which_stack int
-    stack []float64
-    mainstack []float64
-    altstack []float64
+    active_stack int
+    stack [][]float64
 
     memory = make(map[string]float64)
 
@@ -85,21 +83,30 @@ func a(key string, foo func(), doc string) {
     actions[key] = func_data{cmd:foo, doc:doc}
 }
 
+func InitializeStack() {
+    active_stack = 0
+    item := [][]float64{{}}
+    stack = append(stack, item...)
+}
+
 func InitializeActions() {
+    // push consts
     a("euler", E, "Decimal expansion of e - Euler's number")
     a("pi", Pi, "Decimal expansion of Pi (or, digits of Pi)")
     a("ln", Ln2, "Decimal expansion of the natural logarithm of 2")
     a("ln10", Ln10, "Decimal expansion of natural logarithm of 10")
+    a("everything", Everything, "Answer to Everything")
 
     // unary actions
     a("drop", Drop, "Remove the top item from the stack")
+    a("pord", Pord, "Remove the bottom item from the stack (opposite of drop)")
     a("--", Decrement, "subtract one from the top of the stack")
     a("++", Increment, "add one to the top of the stack")
     a("^2", Square, "square the item at the top of the stack")
     a("rand", Random, "Generates a random number from 0-1")
     a("integer", Truncate, "Return the integer part of the number")
     a("decimal", Exponent, "Return the decimal part of the number");
-    a("!", Factorial, "")
+    a("!", Factorial, "Factorial")
 
     // binary actions
     a("&", And, "AND values")
@@ -130,7 +137,11 @@ func InitializeActions() {
     a("clear", Clear, "Empty the stack")
 
     //other actions
-    a("swap", SwapStacks, "not implimented yet")
+    a("sswap", SwapStacks, "swap stacks")
+    a("sprint", PrintStacks, "print all stacks")
+    a("sprinti", PrintStacksInfo, "Print stack info")
+    a("sadd", AddStack, "add a stack")
+
     a("quit", Exit, "Quit application, same as exit")
     a("exit", Exit, "Quit application, same as quit")
     a("help", Help, "Display a help document")
@@ -138,7 +149,18 @@ func InitializeActions() {
     a("dump", Dump, "print out memory storage")
 }
 
+func fish() {
+    no_args := "complete --command rpn --long-option %s --description \"%s\"\n"
+    with_args := "complete --command rpn --long-option %s --arguments \"%s\" --description \"%s\"\n"
+
+    fmt.Printf(with_args, "formula", "code", "math formula to compute")
+    fmt.Printf(no_args, "interactive", "ask user for input and loop")
+    fmt.Printf(no_args, "verbose", "print out more logs")
+    fmt.Printf(no_args, "pop", "Return the final stack value")
+}
+
 func main() {
+    InitializeStack()
     InitializeActions()
 
     //readline setup
@@ -154,8 +176,14 @@ func main() {
     verbose := flag.Bool("verbose", false, "verbose")
     final_pop := flag.Bool("pop", false,
         "output a final pop")
+    show_fish := flag.Bool("_completion", false, "shell completion help")
     
     flag.Parse()
+
+    if *show_fish {
+        fish()
+         os.Exit(0)
+    }
 
     //process stream if it exists
     stat, _ := os.Stdin.Stat()
@@ -166,11 +194,6 @@ func main() {
             formula = &a
         }
     }
-    
-    mainstack = []float64{}
-    altstack = []float64{}
-    stack = mainstack
-    which_stack = 1
 
     if *interactive {
         InteractiveAdvance(line, verbose)
@@ -188,6 +211,7 @@ run the interactive mode using the third party readline library. Help the
 library stor history, take each line and send it to ProcessLine()
 */
 func InteractiveAdvance(line *liner.State, verbose *bool) {
+    fmt.Printf("RPN Calculator by thomas.cherry@gmail.com\n")
     for {
         if name, err := line.Prompt(">"); err == nil {
             input := strings.Trim(name, " ")    //clean it
@@ -249,6 +273,11 @@ func getChar(ascii int) {
     }
 }
 
+func Calculate(formula string) float64 {
+    ProcessLine(formula, false)
+    return Pop()
+}
+
 /**
 process a formula line
 */
@@ -293,16 +322,16 @@ func Action (segment string, verbose bool) {
         if foo!=nil {
             foo()
         } else {
-        switch segment {
-            case "a","b","c","d","e","f","g","h","i","j","k","l","m",
-                    "n","o","p","q","r","s","t","u","v","w","x","y","z":
-                MemoryLoad(segment)
-            case "A","B","C","D","E","F","G","H","I","J","K","L","M",
-                    "N","O","P","Q","R","S","T","U","V","W","X","Y","Z":
-                MemoryStore( strings.ToLower(segment) )
-            default:
-                fmt.Printf("%s is an unknown command\n", segment)
-        }
+            switch segment {
+                case "a","b","c","d","e","f","g","h","i","j","k","l","m",
+                        "n","o","p","q","r","s","t","u","v","w","x","y","z":
+                    MemoryLoad(segment)
+                case "A","B","C","D","E","F","G","H","I","J","K","L","M",
+                        "N","O","P","Q","R","S","T","U","V","W","X","Y","Z":
+                    MemoryStore( strings.ToLower(segment) )
+                default:
+                    fmt.Printf("%s is an unknown command\n", segment)
+            }
         }
     }
 
@@ -317,8 +346,19 @@ func Action (segment string, verbose bool) {
 
 // memory functions
 
+func cleanKey(raw string) string {
+    var ans string
+        cleaner := strings.ToLower(strings.Trim(raw, " "))
+        ans = cleaner
+    return ans
+}
+
+/**
+Recall a value from memory to the stack
+@param key value name
+*/
 func MemoryLoad (key string) {//recall value
-    var value = memory[key]     
+    var value = memory[key]
     Push(value)
 }
 
@@ -332,52 +372,69 @@ func Dump() {
 
 // stack functions
 
+func ActiveStack(params ...[]float64) []float64 {
+    return stack[active_stack]
+}
+
+func ActiveStackUpdate(params ...[]float64) {
+    if params!=nil && len(params)>0 && params[0]!=nil {
+        stack[active_stack] = params[0]
+    }
+}
+
 func Items() bool {
-    return len(stack)>0
+    return len(stack[active_stack])>0
 }
 
 func Empty() bool {
-    return len(stack)<1
+    return len(stack[active_stack])<1
 }
 
 func Push(value float64) {
     if !math.IsNaN(value) {
-        stack = append(stack, value)
+        stack[active_stack] = append(stack[active_stack], value)
+        //ActiveStackUpdate(append(ActiveStack(), value))
     }
 }
 
+/**
+Remove the top of the stack and return it
+*/
 func Pop() float64 {
-    l := len(stack)
+    l := len(stack[active_stack])
     if l < 1 {
-        fmt.Printf("stack is empty %d\n", len(stack))
+        fmt.Printf("stack is empty %d\n", l)
         return math.NaN()
     }
     n := l - 1
     value := math.NaN()
-    value, stack = stack[n], stack[:n]
+    value, stack[active_stack] = stack[active_stack][n], stack[active_stack][:n]
     return value
 }
 
+/**
+Return the top of the stack, but don't remove it
+*/
 func Peek() float64 {
-    n := len(stack)-1
-    return stack[n]
+    n := len(stack[active_stack])-1
+    return stack[active_stack][n]
 }
 
 func PopQueue() float64 {
-    value := stack[0]
-    stack = stack[1:]
+    value := stack[active_stack][0]
+    stack[active_stack] = stack[active_stack][1:]
     return value
 }
 
 // print functions
 func Print() {
-    fmt.Printf("(%v)\n", stack)
+    fmt.Printf("%v\n", stack[active_stack])
 }
 
 func Help() {
-    fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
-    
-f := "%15s : %-8s %s\n"
+    /*fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
+
+    f := "%15s : %-8s %s\n"
     fmt.Printf(f, "Flag", "Category", "Description")
     fmt.Printf(f, "----", "--------", "-----------")
     fmt.Printf(f, "--formula", "Input", "Accept formulas from standard in")
@@ -386,8 +443,9 @@ f := "%15s : %-8s %s\n"
     fmt.Printf(f, "--stream", "Input", "Accept formulas from standard in")
     fmt.Printf(f, "--verbose", "output",
         "output more details about inter workings")
+    */
 
-    fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
+    fmt.Printf("%s\n", strings.Repeat("*", 80) )
     
     keys := make( []string, 0 )
     for k := range actions {
@@ -399,11 +457,35 @@ f := "%15s : %-8s %s\n"
         doc := actions[k].doc
         fmt.Printf("%8s = %s\n", k, doc)
     }
-    fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
+    fmt.Printf("%s\n", strings.Repeat("*", 80) )
 
-    fmt.Printf("%s\n", "a~z will store values (push)")
-    fmt.Printf("%s\n", "A~Z will recall values (pop)")
+    fmt.Printf("%s -- %s\n",
+        "a~z will store values (push)",
+        "A~Z will recall values (pop)")
     fmt.Printf("%s\n", "action:count will call action 'count' times : `+:3`")
+}
+
+func AddStack() {
+    item := [][]float64{{}}
+    stack = append(stack, item...)
+}
+
+func SwapStacks() {
+    if len(stack)==1 {AddStack()}
+
+    if active_stack < len(stack)-1 {
+        active_stack++
+    } else {
+        active_stack = 0
+    }
+}
+
+func PrintStacksInfo() {
+    fmt.Printf( "looking at %d of %d stacks\n", active_stack+1, len(stack) )
+}
+
+func PrintStacks() {
+    fmt.Printf("%v\n", stack)
 }
 
 // system functions 
@@ -512,19 +594,12 @@ func Swap() {
 /**************************************/
 // #mark - unary operators
 
-func SwapStacks() {
-    if which_stack == 1 {//on main, switch to alt
-        mainstack = append ([]float64{}, stack...)
-        stack = append ([]float64{}, altstack...)
-        which_stack = 2
-    } else {
-        altstack = append ([]float64{}, stack...)
-        stack = append ([]float64{}, mainstack...)
-        which_stack = 1
-    }
+func Drop() {
+    Pop()
 }
 
-func Drop() {
+func Pord() {
+    RotateLeft()
     Pop()
 }
 
@@ -575,6 +650,7 @@ func Factorial(){
     Push(ans)
 }
 
+func Everything() {Push(42.0)}
 func E() {Push(math.E)}
 func Pi() {Push(math.Pi)}
 func Ln2() {Push(math.Ln2)}
@@ -585,7 +661,7 @@ func Ln10() {Push(math.Ln10)}
 
 /** clear the stack ; empty the stack */
 func Clear() {
-    stack = []float64{}
+    stack[active_stack] = []float64{}
 }
 
 /** Rotate the stack by taking off the end and putting at the beginning */
@@ -599,7 +675,7 @@ func RotateLeft() {
 func RotateRight() {
     //  >>  take off beginning and put at end
     value := Pop()
-    stack = append([]float64{value}, stack...)
+    stack[active_stack] = append([]float64{value}, stack[active_stack]...)
 }
 
 /** Average the entire stack */
@@ -620,15 +696,15 @@ func Average() {
 */
 func StandardDeviation() {
     var sum, mean, sd float64 = 0, 0, 0
-    count_i := len(stack)
+    count_i := len(stack[active_stack])
     count_f := float64(count_i)
 
     for i:=0 ; i<count_i; i++ {
-        sum += stack[i]
+        sum += stack[active_stack][i]
     }
     mean = sum / count_f
     for i:=0 ; i<count_i; i++ {
-        sd += math.Pow( stack[i]-mean, 2)
+        sd += math.Pow( stack[active_stack][i]-mean, 2)
     }
     sd = math.Sqrt( sd / count_f)
     Clear()
@@ -636,7 +712,7 @@ func StandardDeviation() {
 }
 
 func Sort() {
-    sort.Float64s(stack)
+    sort.Float64s(stack[active_stack])
 }
 
 /**
@@ -649,11 +725,11 @@ func Sort() {
 func Median() {
     Sort()
     med := 0.0
-    count := len(stack)/2
+    count := len(stack[active_stack])/2
     if count % 2 == 0 {//odd use case
-        med = stack[count]
+        med = stack[active_stack][count]
     } else {//even use case
-        med = ( stack[count] + stack[count-1] ) / 2
+        med = ( stack[active_stack][count] + stack[active_stack][count-1] ) / 2
     }
     Clear()
     Push(med)

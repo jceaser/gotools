@@ -31,20 +31,20 @@ func get_term_size(fd uintptr) (int, int) {
 
 /** ESC Commands */
 const (
-    ESC_SAVE_SCREEN = "?47h"
-    ESC_RESTORE_SCREEN = "?47l"
+    _ESC_SAVE_SCREEN = "?47h"
+    _ESC_RESTORE_SCREEN = "?47l"
     
-    ESC_SAVE_CURSOR = "s"
-    ESC_RESTORE_CURSOR = "u"
+    _ESC_SAVE_CURSOR = "s"
+    _ESC_RESTORE_CURSOR = "u"
     
-    ESC_BOLD_ON = "1m"
-    ESC_BOLD_OFF = "0m"
+    _ESC_BOLD_ON = "1m"
+    _ESC_BOLD_OFF = "0m"
     
-    ESC_CURSOR_ON = "?25h"
-    ESC_CURSOR_OFF = "?25l"
+    _ESC_CURSOR_ON = "?25h"
+    _ESC_CURSOR_OFF = "?25l"
     
-    ESC_CLEAR_SCREEN = "2J"
-    ESC_CLEAR_LINE = "2K"
+    _ESC_CLEAR_SCREEN = "2J"
+    _ESC_CLEAR_LINE = "2K"
 )
 
 /** some common symbols */
@@ -179,7 +179,7 @@ func PrintCtrOnErr(esc string) {
 }
 
 func PrintCtrOnErrAt(esc string, y, x int) {
-    fmt.Fprintf(os.Stderr, "\033[%d;%dH\033[%s", y, x)
+    fmt.Fprintf(os.Stderr, "\033[%d;%dH\033[%s", y, x, esc)
 }
 
 /**
@@ -194,17 +194,17 @@ func PrintStrOnErrAt(msg string, y, x int) {
 
 /** Save the screen setup at the start of the app */
 func ScrSave() {
-    PrintCtrOnErr(ESC_SAVE_SCREEN)
-    PrintCtrOnErr(ESC_SAVE_CURSOR)
-    PrintCtrOnErr(ESC_CURSOR_OFF)
-    PrintCtrOnErr(ESC_CLEAR_SCREEN)
+    PrintCtrOnErr(_ESC_SAVE_SCREEN)
+    PrintCtrOnErr(_ESC_SAVE_CURSOR)
+    PrintCtrOnErr(_ESC_CURSOR_OFF)
+    PrintCtrOnErr(_ESC_CLEAR_SCREEN)
 }
 
 /** Restore the screen setup from SrcSave() */
 func ScrRestore() {
-    PrintCtrOnErr(ESC_CURSOR_ON)
-    PrintCtrOnErr(ESC_RESTORE_CURSOR)
-    PrintCtrOnErr(ESC_RESTORE_SCREEN)
+    PrintCtrOnErr(_ESC_CURSOR_ON)
+    PrintCtrOnErr(_ESC_RESTORE_CURSOR)
+    PrintCtrOnErr(_ESC_RESTORE_SCREEN)
 }
 
 /**
@@ -222,7 +222,7 @@ func PrintTime(direction string, i int) {
     //PrintCtrOnErrAt(ESC_CLEAR_LINE, y/2-2, x/2+2)
     //PrintCtrOnErrAt(ESC_CLEAR_LINE, y/2-2, x/2+6)
     
-    PrintCtrOnErr(ESC_BOLD_ON)
+    PrintCtrOnErr(_ESC_BOLD_ON)
     fmt.Fprintf(os.Stderr, "\033[%d;%dH", (y/2), (x/2))
     
     PrintNumber( (i/1000)%10, y/2-2, x/2-6)
@@ -231,7 +231,7 @@ func PrintTime(direction string, i int) {
     PrintNumber( (i/1)%10, y/2-2, x/2+6)
     
     
-    PrintCtrOnErr(ESC_BOLD_OFF)
+    PrintCtrOnErr(_ESC_BOLD_OFF)
     
     PrintStrOnErrAt("", (y), (x-1))
     
@@ -270,7 +270,7 @@ func main() {
         flag.PrintDefaults()
     }
     
-    var start = makeTimestamp();
+    //var start = makeTimestamp();
     
     ScrSave()
 

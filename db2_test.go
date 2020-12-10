@@ -86,27 +86,29 @@ func TestAppend(t *testing.T) {
     data := InitDataBase()
     //SetData(data)
 
-    expected := []string {"9","8","7"}
-    AppendTable(data, expected)
+    source := []string {"9","8","7"}
+    expected := []string {"9.000000","8.000000","7.000000"}
+    AppendTable(data, source)
     row := DataLength(data)-1
     b := interface_to_string(data.Columns["bar"][row])
     f := interface_to_string(data.Columns["foo"][row])
     r := interface_to_string(data.Columns["rab"][row])
     ans := []string{b,f,r}
-    check_three(t, expected, ans, "append test - exact")
+    check_three(t, expected, ans, "append test - exact - %s != expected[%d]=%s")
 
-    source := []string {"8","7","6","5"}
-    expected = []string {"8","7","6"}
+    source = []string {"8","7","6","5"}
+    expected = []string {"8.000000","7.000000","6.000000"}
     AppendTable(data, source)
     row = DataLength(data)-1
     b = interface_to_string(data.Columns["bar"][row])
     f = interface_to_string(data.Columns["foo"][row])
     r = interface_to_string(data.Columns["rab"][row])
     ans = []string{b,f,r}
-    check_three(t, expected, ans, "append test - to many given")
+    check_three(t, expected, ans,
+        "append test - to many given - %s != expected[%d]=%s")
 
     source = []string {"4"}
-    expected = []string {"4","0.000000","0.000000"}
+    expected = []string {"4.000000","0.000000","0.000000"}
     AppendTable(data, source)
     row = DataLength(data)-1
     b = interface_to_string(data.Columns["bar"][row])
@@ -115,6 +117,18 @@ func TestAppend(t *testing.T) {
     ans = []string{b,f,r}
     check_three(t, expected, ans,
         "append test - not enough given - %s != expected[%d]=%s")
+
+    source = []string {"foo:3.14"}
+    expected = []string {"0.000000","3.14","0.000000"}
+    AppendTableByName(data, source)
+    row = DataLength(data)-1
+    b = interface_to_string(data.Columns["bar"][row])
+    f = interface_to_string(data.Columns["foo"][row])
+    r = interface_to_string(data.Columns["rab"][row])
+    ans = []string{b,f,r}
+
+    check_three(t, expected, ans,
+        "append by name test - %s != expected[%d]=%s")
 }
 
 /**************************************/

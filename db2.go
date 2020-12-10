@@ -652,6 +652,27 @@ func DeleteColumn(data DataBase, column string) {
     delete(data.Columns, column)
 }
 
+/** append a new row to the data, and populate the named rows */
+func AppendTableByName(data DataBase, args []string) {
+    /* format: column_values */
+    arg_count := len(args)
+    if arg_count<1 {
+        return
+    }
+    Create(data)
+    row := DataLength(data)-1
+    for i:=0; i<len(args); i++ {
+        raw := args[i]
+        parts := strings.Split(raw, ":")
+        column := parts[0]
+        value := parts[1]
+        if _, ok := data.Columns[column]; ok {
+            data.Columns[column][row] = value
+        }
+    }
+}
+
+/** populate a new row with provided data */
 func AppendTable(data DataBase, args []string) {
     /* format: column_values */
     arg_count := len(args)
@@ -925,6 +946,7 @@ func Table(form string) {
         fmt.Printf("%s\n", table_divider(markdown, len(keys), 2))
     }
 }
+
 func table_worker(form string, divider string) (bytes.Buffer, []bytes.Buffer, []string) {
     var header bytes.Buffer
     var rows []bytes.Buffer
@@ -1024,6 +1046,7 @@ func Summary(form string, args string) {
             return
         }
         Table(form)
+        out.WriteString(" ")
         first_form := app_data.data.Forms[form][0]
         var alist []string
         if len(args)<1 {
@@ -1239,7 +1262,7 @@ func Help() {
     fmt.Printf("Manage table data with optional form display.\n")
     fmt.Printf("\nNote: Arguments with ? are optional\n\n")
     
-    format := "%4s %-12s %-12s %-40s\n"
+    format := "%4s %-14s %-14s %-40s\n"
     
     forty := strings.Repeat("-",40)
     fmt.Printf(format, "Flag", "Long", "Arguments", "Description")
@@ -1250,6 +1273,9 @@ func Help() {
     fmt.Printf(format, "u", "update", "col row val", "update a column row")
     fmt.Printf(format, "d", "delete", "index", "delete a row by number")
     fmt.Printf(format, "", "", "name", "delete a column by name")
+    fmt.Printf(format, "a", "append", "<value list>", "append a table")
+    fmt.Printf(format, "A", "append-by-name", "name:value...", "append a table with named columns")
+
     fmt.Printf(format, "n", "rename", "src dest", "rename a column from src to dest")
     fmt.Printf("\n")
 
@@ -1689,7 +1715,8 @@ func ProcessLine(raw string, data DataBase) {
             }
         case "a", "append":
             AppendTable(app_data.data, args)
-        
+        case "A", "append-by-name":
+            AppendTableByName(app_data.data, args)
         /**************************************************************/
         /* Form CRUD */
         

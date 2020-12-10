@@ -258,7 +258,7 @@ func DoCommand(command string) {
 }
 
 func main() {
-    var up = flag.Int("up", -1, "count up time.")
+    var up = flag.Int("up", -1, "Count up time.")
     var down = flag.Int("down", -1, "count down")
     var done = flag.String("done", "", "output when done")
     var cmd = flag.String("command", "", "command to execute")

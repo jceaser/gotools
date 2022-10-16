@@ -340,6 +340,7 @@ func Save(data DataBase, file string) {
 
 /** print out json */
 func DumpJson() {
+    fmt.Println ("Col data: ", app_data.data.Columns)
     var json_text []byte
     var err error
     if app_data.indent_file {
@@ -580,12 +581,22 @@ func Row(args []string, data DataBase) {
     fmt.Printf("%s\n%s\n", string(header.Bytes()), string(body.Bytes()))
 }
 
-func CreateColumn(data DataBase, column string) {
+func CreateColumn(data DataBase, column string) DataBase {
     size := data_length()
-    data.Columns[column] = make( []interface{}, 0)
-    for i:=0 ; i<size; i++ {
-        data.Columns[column]=append(data.Columns[column],0.0)
+    if data.Columns == nil {
+        //fmt.Printf ("create column %s\n", column)
+        data.Columns = make( map[string][]interface{} )
     }
+    if size<1 {
+        size = 1
+    }
+    data.Columns[column] = make( []interface{}, 0, size)
+    //fmt.Println (data.Columns["name"])
+    for i:=0 ; i<size; i++ {
+        //fmt.Printf ("appending zero\n")
+        data.Columns[column] = append(data.Columns[column],0.0)
+    }
+    return data
 }
 
 func Create(data DataBase) {
@@ -1670,7 +1681,7 @@ func ProcessLine(raw string, data DataBase) {
                 if len(args[0])==0 {
                     Create(app_data.data)
                 } else {            //create column
-                    CreateColumn(app_data.data, args[0])
+                    app_data.data = CreateColumn(app_data.data, args[0])
                 }
             }
         case "r", "read":       //read column row
@@ -1831,6 +1842,7 @@ func main() {
         fmt.Printf("Could not load data\n")
         os.Exit(1)
     } else {
+        fmt.Printf("Data loaded\n")
         app_data.data = *data
     }
     if 0<len(*init_command) {

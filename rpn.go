@@ -1,8 +1,12 @@
 package main
 
 import ("fmt"
-    "bufio"
     "os"
+    "reflect"
+    "bufio"
+    "errors"
+    "io/ioutil"
+    "regexp"
     "flag"
     "math"
     "math/rand"
@@ -95,6 +99,7 @@ func InitializeActions() {
     a("ln", Ln2, "Decimal expansion of the natural logarithm of 2")
     a("ln10", Ln10, "Decimal expansion of natural logarithm of 10")
     a("everything", Everything, "Answer to Everything")
+    a("sol", func(){Push(299792458)}, "Speed of Light")
 
     // unary actions
     a("drop", Drop, "Remove the top item from the stack")
@@ -111,6 +116,7 @@ func InitializeActions() {
     a("cos", Cos, "Cosine of the radian")
     a("tan", Tan, "Tangent of the radian")
     a("fmt", Format, "")
+    a("dup", Dup, "Duplicate x")
 
     // binary actions
     a("&", And, "AND values")
@@ -175,6 +181,8 @@ func main() {
     //flag setup
     formula := flag.String("formula", "print",
         "math formula in RPN format, interpreted before stream")
+    file := flag.String("file", "", "print out function manual")
+    
     interactive := flag.Bool("interactive", false,
         "interactive mode using a readline style interface")
     verbose := flag.Bool("verbose", false, "verbose")
@@ -188,6 +196,22 @@ func main() {
     if *show_fish {
         fish()
          os.Exit(0)
+    }
+    
+    if 0<len(*file) {
+        _, error := os.Stat(*file)
+        if !errors.Is(error, os.ErrNotExist) {
+            fileContent, err := ioutil.ReadFile(*file)
+            if err == nil {
+                text := string(fileContent)
+                if len(*formula)>0 {
+                    together := text + " " + *formula
+                    formula = &together
+                } else {
+                    formula = &text
+                }
+            }
+        }
     }
 
     if *manual {
@@ -287,12 +311,53 @@ func Calculate(formula string) float64 {
     return Pop()
 }
 
+func split_on_spaces(raw string) []string {
+    cleaned := strings.TrimSpace(raw)
+    rule := regexp.MustCompile("\\s+")
+    list := rule.Split(cleaned, -1)
+    return list
+}
+
 /**
 process a formula line
 */
 func ProcessLine(formula string, verbose bool) {
-    for _, segment:= range strings.Split(formula, " ") {
+    labels := make(map[int]int)
+    commands := split_on_spaces(formula)
+    for pc := 0 ; pc <= len(commands)-1; pc++ {
+        segment := commands[pc]
         cmd := segment
+        if cmd=="lbl" {
+            label := int(Pop())
+            labels[label] = pc
+            continue
+        } else if cmd=="j-" {
+            label := int(Pop())
+            test := Pop()
+            if test<0.0 {
+                pc = labels[label]
+            }
+            continue
+        } else if cmd=="j+" {
+            label := int(Pop())
+            test := Pop()
+            if test>0.0 {
+                pc = labels[label]
+            }
+            continue
+        } else if cmd=="j=" {
+            label := int(Pop())
+            test := Pop()
+            if test==0.0 {
+                pc = labels[label]
+            }
+            continue
+        } else if cmd=="goto" {
+            label := int(Pop())
+            pc = labels[label]
+            continue
+        }
+
         muliplyer := 1
         if strings.Contains(cmd, ":") {
             cmd_parts := strings.Split(cmd, ":")
@@ -323,6 +388,8 @@ func Action (segment string, verbose bool) {
     } else {
         foo := actions[segment].cmd
         doc := actions[segment].doc
+        
+        fmt.Println("foo = ", reflect.ValueOf(foo).Kind())
 
         if verbose && len(doc)>0 {
             fmt.Printf("%s\n", doc)
@@ -663,6 +730,8 @@ func Factorial(){
     }
     Push(ans)
 }
+
+func Dup() {Push(Peek())}
 
 //degrees = radians × 180° / π
 //radians = degrees × π / 180°

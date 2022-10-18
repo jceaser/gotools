@@ -42,40 +42,31 @@ var (
 var app_data = App_Data{active_file:"", verbose:false}
 
 const (
-    RuneSterling = '£'
-    RuneDArrow   = '↓'
-    RuneLArrow   = '←'
-    RuneRArrow   = '→'
-    RuneUArrow   = '↑'
+    RuneLArrow   = '←' ; RuneDArrow = '↓' ; RuneUArrow = '↑' ; RuneRArrow = '→'
+    RuneBoard    = '░' ; RuneCkBoard  = '▒' ; RuneBlock    = '█'
     RuneBullet   = '·'
-    RuneBoard    = '░'
-    RuneCkBoard  = '▒'
     RuneDegree   = '°'
     RuneDiamond  = '◆'
-    RuneGEqual   = '≥'
+    RuneLEqual   = '≤' ; RuneGEqual   = '≥'
     RunePi       = 'π'
-    RuneHLine    = '─'
     RuneLantern  = '§'
-    RunePlus     = '┼'
-    RuneLEqual   = '≤'
-    RuneLLCorner = '└'
-    RuneLRCorner = '┘'
     RuneNEqual   = '≠'
     RunePlMinus  = '±'
     RuneS1       = '⎺'
     RuneS3       = '⎻'
     RuneS7       = '⎼'
     RuneS9       = '⎽'
-    RuneBlock    = '█'
-    RuneTTee     = '┬'
-    RuneRTee     = '┤'
-    RuneLTee     = '├'
-    RuneBTee     = '┴'
-    RuneULCorner = '┌'
-    RuneURCorner = '┐'
-    RuneVLine    = '│' //'│'
-    RuneUVLine   = '╷'
+    
+    RuneULRound = '╭' ; RuneURRound = '╮'
+    RuneDLRound = '╰' ; RuneDRRound = '╯'
+    
+    RuneULCorner = '┌' ; RuneUTee = '┬' ; RuneURCorner = '┐'
+    RuneLTee     = '├' ; RuneTee  = '┼' ; RuneRTee     = '┤'
+    RuneDLCorner = '└' ; RuneDTee = '┴' ; RuneDRCorner = '┘'
+    RuneHLine    = '─' ; RuneVLine    = '│'
+    
     RuneDVLine   = '╵'
+    RuneUVLine   = '╷'
 )
 
 const (
@@ -97,9 +88,9 @@ const (
 
 //#mark - functions
 
-func v(format string, args ...string) {
+func v(format string, args ...interface{}) {
     if app_data.verbose {
-        fmt.Printf(format, args)
+        fmt.Printf(format, args...)
     }
 }
 
@@ -170,19 +161,19 @@ func Load(file string) map[string]interface{} {
 func Save(data map[string]interface{}, file string) {
     json_text, err := json.Marshal(data)
     if err!=nil {
-        fmt.Printf("error: %s\n", err)
+        fmt.Fprintf(os.Stderr, "error: %s\n", err)
         return
     }
     err = ioutil.WriteFile(file, json_text, 0644)
     if err!=nil {
-        fmt.Printf("Error: %s\n", err)
+        fmt.Fprintf(os.Stderr, "Error: %s\n", err)
     } else {
         v("File %s has been saved\n", file)
     }
 }
 
 func List(data map[string]interface{}) {
-    //v("List: ")
+    v("List: ")
     for i, k := range sorted_keys(data) {
         if i>0 {
             fmt.Printf(", ")
@@ -203,17 +194,19 @@ func Create(data map[string]interface{}, key string, value string) {
         }
         //data[key] = value
     } else {
-        fmt.Printf ("key already exists\n")
+        fmt.Fprintf (os.Stderr, "key already exists\n")
     }
 }
 
 func Read(data map[string]interface{}, key string) {
     if data[key] == nil {
-        fmt.Printf("key does not exist\n")
+        fmt.Fprintf(os.Stderr, "key does not exist\n")
     } else {
-        //v("%s=", key)
+        v("%s=", key)
         value := fmt.Sprintf("%v", data[key])
-        if number, err := strconv.ParseFloat(value, 64) ; err==nil {
+        if number, err := strconv.ParseInt(value, 10, 64) ; err == nil {
+            fmt.Printf("%d\n", number)
+        } else if number, err := strconv.ParseFloat(value, 64) ; err==nil {
             fmt.Printf("%f\n", number)
         } else {
             fmt.Printf("%s\n", value)
@@ -231,7 +224,7 @@ func Update(data map[string]interface{}, key string, value string) {
             data[key] = jsonToMap(value)
         }
     } else {
-        fmt.Printf ("key does not exists\n")
+        fmt.Fprintf (os.Stderr, "key does not exists\n")
     }
 }
 
@@ -242,30 +235,58 @@ func Delete(data map[string]interface{}, key string) {
 func Dump(data map[string]interface{}) {
     json_text, err := json.Marshal(data)
     if err!=nil {
-        fmt.Printf("error: %s\n", err)
+        fmt.Fprintf(os.Stderr, "error: %s\n", err)
     } else {
         fmt.Printf("%s\n", json_text)
     }
 }
 
+func max(left, right int) int {
+    if left < right {
+        return right
+    }
+    return left
+}
+
 func Table(data map[string]interface{}) {
+    thead1 := ""
+    thead2 := ""
     header := ""
     rows := ""
-    for k,v := range data {
-        if len(header)>0 {
-            header = fmt.Sprintf("%s, %s", header, k)
+    tfoot := ""
+    for _,v := range sorted_keys (data) {
+        head_width := len(fmt.Sprintf("%v", v))
+        data_width := len(fmt.Sprintf("%v", data[v]))
+        width := max(head_width, data_width)
+        ws := fmt.Sprintf("%d", width+1)
+        if len(rows)<1 {
+            //first key
+            header = fmt.Sprintf("%s%s", header, v)
+            rows = fmt.Sprintf("%" + ws + "v", data[v])
         } else {
-            header = k
+            //middle separator
+            thead1 = fmt.Sprintf("%s%c", thead1, RuneUTee)
+            thead2 = fmt.Sprintf("%s%c", thead2, RuneTee)
+            tfoot = fmt.Sprintf("%s%c", tfoot, RuneDTee)
+            //header text
+            header = fmt.Sprintf("%s%c%s", header, RuneVLine, v)
+            rows = fmt.Sprintf("%s%c%" + ws + "v", rows, RuneVLine, data[v])
         }
-
-        if len(rows)>0 {
-            rows = fmt.Sprintf("%s, %v", rows, v)
-        } else {
-            rows = fmt.Sprintf("%v", v)
+        
+        //horizontal bars
+        for i:=0 ; i<=width ; i++ {
+            thead1 = fmt.Sprintf("%s%c", thead1, RuneHLine)
+            thead2 = fmt.Sprintf("%s%c", thead2, RuneHLine)
+            tfoot = fmt.Sprintf("%s%c", tfoot, RuneHLine)
         }
     }
-    fmt.Printf("%s\n", header)
-    fmt.Printf("%s\n", rows)
+    fmt.Printf("%c%s%c\n", RuneULCorner, thead1, RuneURCorner)
+    fmt.Printf("%c %s %c\n", RuneVLine, header, RuneVLine)
+    fmt.Printf("%c%s%c\n", RuneLTee, thead2, RuneRTee)
+
+    fmt.Printf("%c%s%c\n", RuneVLine, rows, RuneVLine)
+    
+    fmt.Printf("%c%s%c\n", RuneDLCorner, tfoot, RuneDRCorner)
 }
 
 func Math(data map[string]interface{}, key string,
@@ -275,7 +296,6 @@ func Math(data map[string]interface{}, key string,
     } else {
         value := fmt.Sprintf("%v", data[key])
         if number, err := strconv.ParseFloat(value, 64) ; err==nil {
-            //data[key] = number + 1
             data[key] = operation(number, 1)
         }
     }
@@ -315,11 +335,11 @@ func InteractiveAdvance(line *liner.State, data map[string]interface{}) {
         } else if err == liner.ErrPromptAborted {
             fmt.Print("Aborted")
         } else {
-            fmt.Print("Error reading line: ", err)
+            fmt.Fprint(os.Stderr, "Error reading line: ", err)
         }
         //save the history
         if f, err := os.Create(history_fn); err != nil {
-            fmt.Print("Error creating history file: ", err)
+            fmt.Fprint(os.Stderr, "Error creating history file: ", err)
         } else {
             line.WriteHistory(f)
             f.Close()
@@ -380,7 +400,7 @@ func ProcessLine(raw string, data map[string]interface{}) {
     args := list[1:]
     switch command {
             case "q", "quit", "exit":
-            if app_data.verbose { fmt.Printf("getting out of here\n") }
+            v("getting out of here\n")
             os.Exit(0)
         case "e", "echo":
             fmt.Printf("%s\n", strings.Join(args, ",") )

@@ -756,12 +756,13 @@ func AppendTable(data DataBase, args []string) {
     }
 }
 
+/** output the calculations by row and column */
 func Calculate() {
     var header bytes.Buffer
     var rows []bytes.Buffer
     first := true
 
-    //find the first column and get its length, then initialize rows
+    // find the first column and get its length, then initialize rows
     for _,v := range app_data.data.Columns {
         for i:=0 ; i<len(v) ; i++ {
             rows = append(rows, bytes.Buffer{})
@@ -769,6 +770,7 @@ func Calculate() {
         break
     }
 
+    // calculate each formula
     for key,formula := range app_data.data.Calculations {
         if !first {
             header.WriteString( app_data.format.divider )

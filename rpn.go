@@ -1,8 +1,12 @@
 package main
 
 import ("fmt"
-    "bufio"
     "os"
+    "reflect"
+    "bufio"
+    "errors"
+    "io/ioutil"
+    "regexp"
     "flag"
     "math"
     "math/rand"
@@ -31,9 +35,8 @@ var (
     
     active_stack int
     stack [][]float64
-
     memory = make(map[string]float64)
-
+    modes = make(map[string]interface{})
     actions = make(map[string]func_data)
 )
 
@@ -96,6 +99,7 @@ func InitializeActions() {
     a("ln", Ln2, "Decimal expansion of the natural logarithm of 2")
     a("ln10", Ln10, "Decimal expansion of natural logarithm of 10")
     a("everything", Everything, "Answer to Everything")
+    a("sol", func(){Push(299792458)}, "Speed of Light")
 
     // unary actions
     a("drop", Drop, "Remove the top item from the stack")
@@ -107,6 +111,12 @@ func InitializeActions() {
     a("integer", Truncate, "Return the integer part of the number")
     a("decimal", Exponent, "Return the decimal part of the number");
     a("!", Factorial, "Factorial")
+    a("rad", Rad, "Decimal to Radians")
+    a("sin", Sin, "Sine of the radian")
+    a("cos", Cos, "Cosine of the radian")
+    a("tan", Tan, "Tangent of the radian")
+    a("fmt", Format, "")
+    a("dup", Dup, "Duplicate x")
 
     // binary actions
     a("&", And, "AND values")
@@ -121,7 +131,6 @@ func InitializeActions() {
     a("min", Min, "return the smaller of two numbers")
     a("max", Max, "return the larger of two numbers")
     a("<>", Swap, "swap the top two stack items")
-    a("<->", Swap, "swap the top two stack items")
 
     // ternary actions
     a("?<", IfLess, "if s[2]<0 then s[1] else s[0], consumes all three")
@@ -146,6 +155,7 @@ func InitializeActions() {
     a("exit", Exit, "Quit application, same as quit")
     a("help", Help, "Display a help document")
     a("print", Print, "print the stack")
+    a("vprint", PrintV, "print the stack")
     a("dump", Dump, "print out memory storage")
 }
 
@@ -171,18 +181,41 @@ func main() {
     //flag setup
     formula := flag.String("formula", "print",
         "math formula in RPN format, interpreted before stream")
+    file := flag.String("file", "", "print out function manual")
+    
     interactive := flag.Bool("interactive", false,
         "interactive mode using a readline style interface")
     verbose := flag.Bool("verbose", false, "verbose")
     final_pop := flag.Bool("pop", false,
         "output a final pop")
     show_fish := flag.Bool("_completion", false, "shell completion help")
+    manual := flag.Bool("manual", false, "print out function manual")
     
     flag.Parse()
 
     if *show_fish {
         fish()
          os.Exit(0)
+    }
+    
+    if 0<len(*file) {
+        _, error := os.Stat(*file)
+        if !errors.Is(error, os.ErrNotExist) {
+            fileContent, err := ioutil.ReadFile(*file)
+            if err == nil {
+                text := string(fileContent)
+                if len(*formula)>0 {
+                    together := text + " " + *formula
+                    formula = &together
+                } else {
+                    formula = &text
+                }
+            }
+        }
+    }
+
+    if *manual {
+        Help()
     }
 
     //process stream if it exists
@@ -278,12 +311,53 @@ func Calculate(formula string) float64 {
     return Pop()
 }
 
+func split_on_spaces(raw string) []string {
+    cleaned := strings.TrimSpace(raw)
+    rule := regexp.MustCompile("\\s+")
+    list := rule.Split(cleaned, -1)
+    return list
+}
+
 /**
 process a formula line
 */
 func ProcessLine(formula string, verbose bool) {
-    for _, segment:= range strings.Split(formula, " ") {
+    labels := make(map[int]int)
+    commands := split_on_spaces(formula)
+    for pc := 0 ; pc <= len(commands)-1; pc++ {
+        segment := commands[pc]
         cmd := segment
+        if cmd=="lbl" {
+            label := int(Pop())
+            labels[label] = pc
+            continue
+        } else if cmd=="j-" {
+            label := int(Pop())
+            test := Pop()
+            if test<0.0 {
+                pc = labels[label]
+            }
+            continue
+        } else if cmd=="j+" {
+            label := int(Pop())
+            test := Pop()
+            if test>0.0 {
+                pc = labels[label]
+            }
+            continue
+        } else if cmd=="j=" {
+            label := int(Pop())
+            test := Pop()
+            if test==0.0 {
+                pc = labels[label]
+            }
+            continue
+        } else if cmd=="goto" {
+            label := int(Pop())
+            pc = labels[label]
+            continue
+        }
+
         muliplyer := 1
         if strings.Contains(cmd, ":") {
             cmd_parts := strings.Split(cmd, ":")
@@ -314,6 +388,8 @@ func Action (segment string, verbose bool) {
     } else {
         foo := actions[segment].cmd
         doc := actions[segment].doc
+        
+        fmt.Println("foo = ", reflect.ValueOf(foo).Kind())
 
         if verbose && len(doc)>0 {
             fmt.Printf("%s\n", doc)
@@ -428,23 +504,31 @@ func PopQueue() float64 {
 
 // print functions
 func Print() {
-    fmt.Printf("%v\n", stack[active_stack])
+    raw_format, okay := modes["format"]
+    format := "%v" + "\n"
+    if okay {
+        switch raw_format.(type) {
+        case string:
+            format = raw_format.(string)
+        default:
+            format = "%v" + "\n"
+        }
+    }
+    fmt.Printf(format, stack[active_stack])
+    //fmt.Printf("%v\n", stack[active_stack])
+}
+
+func PrintV() {
+    l := len(stack[active_stack])
+    //for i := len(stack[active_stack])-1 ; 0<=i ; i-- {
+    //for i, v := range stack[active_stack] {
+    for i := 0 ; i < l ; i++ {
+        v := stack[active_stack][i]
+        fmt.Printf("%d: %v\n", l-i-1, v)
+    }
 }
 
 func Help() {
-    /*fmt.Printf("\n%s\n\n", strings.Repeat("*", 80) )
-
-    f := "%15s : %-8s %s\n"
-    fmt.Printf(f, "Flag", "Category", "Description")
-    fmt.Printf(f, "----", "--------", "-----------")
-    fmt.Printf(f, "--formula", "Input", "Accept formulas from standard in")
-    fmt.Printf(f, "--help", "help", "Explanation of parameters")
-    fmt.Printf(f, "--interactive", "Mode", "use a readline like interface")
-    fmt.Printf(f, "--stream", "Input", "Accept formulas from standard in")
-    fmt.Printf(f, "--verbose", "output",
-        "output more details about inter workings")
-    */
-
     fmt.Printf("%s\n", strings.Repeat("*", 80) )
     
     keys := make( []string, 0 )
@@ -455,14 +539,14 @@ func Help() {
 
     for _, k := range keys {
         doc := actions[k].doc
-        fmt.Printf("%8s = %s\n", k, doc)
+        fmt.Printf("%10s = %s\n", k, doc)
     }
-    fmt.Printf("%s\n", strings.Repeat("*", 80) )
+    fmt.Printf("%s\n", strings.Repeat("* ", 40) )
 
     fmt.Printf("%s -- %s\n",
-        "a~z will store values (push)",
-        "A~Z will recall values (pop)")
-    fmt.Printf("%s\n", "action:count will call action 'count' times : `+:3`")
+        "a-z will load values (read)",
+        "A-Z will store values (write)")
+    fmt.Printf("%s\n", "`action:count` will call action 'count' times : `+:3`")
 }
 
 func AddStack() {
@@ -594,19 +678,23 @@ func Swap() {
 /**************************************/
 // #mark - unary operators
 
-func Drop() {
-    Pop()
+func Format() {
+    decimals := int64(Pop())
+    if decimals < 0 {
+        modes["format"] = nil
+    } else {
+        modes["format"] = fmt.Sprintf ("%%.%df\n", decimals);
+    }
 }
+
+func Drop() {Pop()}
 
 func Pord() {
     RotateLeft()
     Pop()
 }
 
-func SquareRoot() {
-    base := Pop()
-    Push( math.Sqrt(base) )
-}
+func SquareRoot() {Push( math.Sqrt(Pop()) )}
 
 func Square() {
     power := 2.0
@@ -614,10 +702,7 @@ func Square() {
     Push( math.Pow(base,power) )
 }
 
-func Round() {
-    top := Pop()
-    Push( math.Round(top) )
-}
+func Round() {Push( math.Round(Pop()) )}
 
 func Increment() {
     value := Pop()
@@ -629,13 +714,9 @@ func Decrement() {
     Push(value - 1)
 }
 
-func Random() {
-    Push(rand.Float64())
-}
+func Random() {Push(rand.Float64())}
 
-func Truncate() {
-    Push(math.Trunc(Pop()))
-}
+func Truncate() {Push(math.Trunc(Pop()))}
 
 func Exponent() {
     _, exp := math.Modf(Pop())
@@ -650,6 +731,17 @@ func Factorial(){
     Push(ans)
 }
 
+func Dup() {Push(Peek())}
+
+//degrees = radians × 180° / π
+//radians = degrees × π / 180°
+
+func Rad(){Push(Pop()*math.Pi/180.0)}
+
+func Sin(){Push(math.Sin(Pop()))}
+func Cos(){Push(math.Cos(Pop()))}
+func Tan(){Push(math.Tan(Pop()))}
+
 func Everything() {Push(42.0)}
 func E() {Push(math.E)}
 func Pi() {Push(math.Pi)}
@@ -660,9 +752,7 @@ func Ln10() {Push(math.Ln10)}
 /* full stack operators */
 
 /** clear the stack ; empty the stack */
-func Clear() {
-    stack[active_stack] = []float64{}
-}
+func Clear() {stack[active_stack] = []float64{}}
 
 /** Rotate the stack by taking off the end and putting at the beginning */
 func RotateLeft() {
@@ -711,9 +801,7 @@ func StandardDeviation() {
     Push(sd)
 }
 
-func Sort() {
-    sort.Float64s(stack[active_stack])
-}
+func Sort() {sort.Float64s(stack[active_stack])}
 
 /**
 >3 5 9 1 8 6 58 9 4 10 med print

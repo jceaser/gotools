@@ -7,10 +7,11 @@ import ("fmt"
     "bytes"
     "log"*/
     "flag"
+    "sort"
     "io/ioutil"
-    /*"math"
+    //"math"
     "strconv"
-    "os/exec"*/
+    //"os/exec"
     "strings"
     /*"syscall"
     "unsafe"*/
@@ -27,17 +28,7 @@ type winsize struct {
     Ypixel uint16
 }
 
-type screen_buffers struct {
-    left_hud string
-    right_hud string
-    content string
-}
-
 type App_Data struct {
-    backlog_command string
-    worker_command string
-    backlog_list []string
-
     data map[string]interface{}
     verbose bool
     active_file string
@@ -48,44 +39,34 @@ var (
     names      = []string{"Create", "Read", "Update", "Delete"} //used by liner
 )
 
-var buffers = screen_buffers{left_hud: "", right_hud: "", content: ""}
-var app_data = App_Data{backlog_command:"", worker_command:"", verbose:false}
+var app_data = App_Data{active_file:"", verbose:false}
 
 const (
-    RuneSterling = '£'
-    RuneDArrow   = '↓'
-    RuneLArrow   = '←'
-    RuneRArrow   = '→'
-    RuneUArrow   = '↑'
+    RuneLArrow   = '←' ; RuneDArrow = '↓' ; RuneUArrow = '↑' ; RuneRArrow = '→'
+    RuneBoard    = '░' ; RuneCkBoard  = '▒' ; RuneBlock    = '█'
     RuneBullet   = '·'
-    RuneBoard    = '░'
-    RuneCkBoard  = '▒'
     RuneDegree   = '°'
     RuneDiamond  = '◆'
-    RuneGEqual   = '≥'
+    RuneLEqual   = '≤' ; RuneGEqual   = '≥'
     RunePi       = 'π'
-    RuneHLine    = '─'
     RuneLantern  = '§'
-    RunePlus     = '┼'
-    RuneLEqual   = '≤'
-    RuneLLCorner = '└'
-    RuneLRCorner = '┘'
     RuneNEqual   = '≠'
     RunePlMinus  = '±'
     RuneS1       = '⎺'
     RuneS3       = '⎻'
     RuneS7       = '⎼'
     RuneS9       = '⎽'
-    RuneBlock    = '█'
-    RuneTTee     = '┬'
-    RuneRTee     = '┤'
-    RuneLTee     = '├'
-    RuneBTee     = '┴'
-    RuneULCorner = '┌'
-    RuneURCorner = '┐'
-    RuneVLine    = '│' //'│'
-    RuneUVLine   = '╷'
+    
+    RuneULRound = '╭' ; RuneURRound = '╮'
+    RuneDLRound = '╰' ; RuneDRRound = '╯'
+    
+    RuneULCorner = '┌' ; RuneUTee = '┬' ; RuneURCorner = '┐'
+    RuneLTee     = '├' ; RuneTee  = '┼' ; RuneRTee     = '┤'
+    RuneDLCorner = '└' ; RuneDTee = '┴' ; RuneDRCorner = '┘'
+    RuneHLine    = '─' ; RuneVLine    = '│'
+    
     RuneDVLine   = '╵'
+    RuneUVLine   = '╷'
 )
 
 const (
@@ -105,18 +86,30 @@ const (
     ESC_CLEAR_LINE = "2K"
 )
 
-//#mark - hi
+//#mark - functions
 
-/*func v(msg string) {
+func v(format string, args ...interface{}) {
     if app_data.verbose {
-        fmt.Printf("%s\n", [msg])
+        fmt.Printf(format, args...)
     }
-}*/
+}
 
-func v(format string, args ...string) {
-    if app_data.verbose {
-        fmt.Printf(format, args)
+func jsonToMap(raw string) interface{} {
+    var json_data interface{}
+    json.Unmarshal([]byte(raw), &json_data)
+    return json_data
+}
+
+/** return sorted keys from a map of interfaces */
+func sorted_keys(data map[string]interface{}) []string {
+    keys := make([]string, len(data))
+    i := 0
+    for k := range data {
+        keys[i] = k
+        i++
     }
+    sort.Strings(keys)
+    return keys
 }
 
 func load(file string) *os.File {
@@ -167,67 +160,144 @@ func Load(file string) map[string]interface{} {
 
 func Save(data map[string]interface{}, file string) {
     json_text, err := json.Marshal(data)
-    fmt.Printf("here: %s\n", json_text)
     if err!=nil {
-        fmt.Printf("error: %s\n", err)
+        fmt.Fprintf(os.Stderr, "error: %s\n", err)
+        return
     }
     err = ioutil.WriteFile(file, json_text, 0644)
     if err!=nil {
-        fmt.Printf("Error: %s\n", err)
+        fmt.Fprintf(os.Stderr, "Error: %s\n", err)
     } else {
         v("File %s has been saved\n", file)
     }
 }
 
 func List(data map[string]interface{}) {
-    fmt.Printf("List: ")
-    for k,v := range data {
-        fmt.Printf("%s=%s ", k, v)
+    v("List: ")
+    for i, k := range sorted_keys(data) {
+        if i>0 {
+            fmt.Printf(", ")
+        }
+        fmt.Printf("%s=%v", k, data[k])
     }
     fmt.Printf("\n")
 }
 
 func Create(data map[string]interface{}, key string, value string) {
-    data[key] = value
+    if data[key] == nil {
+        //try to parse the value, turn numbers into a number
+        if number, err := strconv.ParseFloat(value, 64) ; err==nil {
+            //no error, value is a number
+            data[key] = number
+        } else {
+            data[key] = jsonToMap(value)
+        }
+        //data[key] = value
+    } else {
+        fmt.Fprintf (os.Stderr, "key already exists\n")
+    }
 }
 
 func Read(data map[string]interface{}, key string) {
-    fmt.Printf("%s=%s\n", key, data[key])
+    if data[key] == nil {
+        fmt.Fprintf(os.Stderr, "key does not exist\n")
+    } else {
+        v("%s=", key)
+        value := fmt.Sprintf("%v", data[key])
+        if number, err := strconv.ParseInt(value, 10, 64) ; err == nil {
+            fmt.Printf("%d\n", number)
+        } else if number, err := strconv.ParseFloat(value, 64) ; err==nil {
+            fmt.Printf("%f\n", number)
+        } else {
+            fmt.Printf("%s\n", value)
+        }
+    }
 }
 
 func Update(data map[string]interface{}, key string, value string) {
-    data[key] = value
+    if data[key] != nil {
+        //try to parse the value, turn numbers into a number
+        if number, err := strconv.ParseFloat(value, 64) ; err==nil {
+            //no error, value is a number
+            data[key] = number
+        } else {
+            data[key] = jsonToMap(value)
+        }
+    } else {
+        fmt.Fprintf (os.Stderr, "key does not exists\n")
+    }
 }
 
 func Delete(data map[string]interface{}, key string) {
     delete (data, key)
 }
 
-func Table() {
-    header := ""
-    rows := ""
-    for k,v := range app_data.data {
-        if len(header)>0 {
-            header = fmt.Sprintf("%s, %s", header, k)
-        } else {
-            header = k
-        }
-
-        if len(rows)>0 {
-            rows = fmt.Sprintf("%s, %v", rows, v)
-        } else {
-            rows = fmt.Sprintf("%v", v)
-        }
+func Dump(data map[string]interface{}) {
+    json_text, err := json.Marshal(data)
+    if err!=nil {
+        fmt.Fprintf(os.Stderr, "error: %s\n", err)
+    } else {
+        fmt.Printf("%s\n", json_text)
     }
-    fmt.Printf("%s\n", header)
-    fmt.Printf("%s\n", rows)
 }
 
-func Sub() {
-    if _, ok := app_data.data["configuration"]; ok {
-        app_data.data["configuration"] = map[string]interface{}{};
-        foo, ok := app_data.data["configuration"].(map[string]interface{})
-        if ok {foo["foo"] = "bar"; }
+func max(left, right int) int {
+    if left < right {
+        return right
+    }
+    return left
+}
+
+func Table(data map[string]interface{}) {
+    thead1 := ""
+    thead2 := ""
+    header := ""
+    rows := ""
+    tfoot := ""
+    for _,v := range sorted_keys (data) {
+        head_width := len(fmt.Sprintf("%v", v))
+        data_width := len(fmt.Sprintf("%v", data[v]))
+        width := max(head_width, data_width)
+        ws := fmt.Sprintf("%d", width+1)
+        if len(rows)<1 {
+            //first key
+            header = fmt.Sprintf("%s%s", header, v)
+            rows = fmt.Sprintf("%" + ws + "v", data[v])
+        } else {
+            //middle separator
+            thead1 = fmt.Sprintf("%s%c", thead1, RuneUTee)
+            thead2 = fmt.Sprintf("%s%c", thead2, RuneTee)
+            tfoot = fmt.Sprintf("%s%c", tfoot, RuneDTee)
+            //header text
+            header = fmt.Sprintf("%s%c%s", header, RuneVLine, v)
+            rows = fmt.Sprintf("%s%c%" + ws + "v", rows, RuneVLine, data[v])
+        }
+        
+        //horizontal bars
+        for i:=0 ; i<=width ; i++ {
+            thead1 = fmt.Sprintf("%s%c", thead1, RuneHLine)
+            thead2 = fmt.Sprintf("%s%c", thead2, RuneHLine)
+            tfoot = fmt.Sprintf("%s%c", tfoot, RuneHLine)
+        }
+    }
+    fmt.Printf("%c%s%c\n", RuneULCorner, thead1, RuneURCorner)
+    fmt.Printf("%c %s %c\n", RuneVLine, header, RuneVLine)
+    fmt.Printf("%c%s%c\n", RuneLTee, thead2, RuneRTee)
+
+    fmt.Printf("%c%s%c\n", RuneVLine, rows, RuneVLine)
+    
+    fmt.Printf("%c%s%c\n", RuneDLCorner, tfoot, RuneDRCorner)
+}
+
+func Math(data map[string]interface{}, key string,
+        operation func(float64, float64) float64) {
+    if data[key] == nil {
+        data[key] = 0.0
+    } else {
+        value := fmt.Sprintf("%v", data[key])
+        if number, err := strconv.ParseFloat(value, 64) ; err==nil {
+            data[key] = operation(number, 1)
+        }
     }
 }
 
@@ -261,15 +331,15 @@ func InteractiveAdvance(line *liner.State, data map[string]interface{}) {
         if name, err := line.Prompt(">"); err == nil {
             input := strings.Trim(name, " ")    //clean it
             line.AppendHistory(name)            //save it
-            ProcessLine(input, data)  //use it
+            ProcessManyLines(input, data)  //use it
         } else if err == liner.ErrPromptAborted {
             fmt.Print("Aborted")
         } else {
-            fmt.Print("Error reading line: ", err)
+            fmt.Fprint(os.Stderr, "Error reading line: ", err)
         }
         //save the history
         if f, err := os.Create(history_fn); err != nil {
-            fmt.Print("Error creating history file: ", err)
+            fmt.Fprint(os.Stderr, "Error creating history file: ", err)
         } else {
             line.WriteHistory(f)
             f.Close()
@@ -277,16 +347,63 @@ func InteractiveAdvance(line *liner.State, data map[string]interface{}) {
     }
 }
 
+func Help() {
+    fmt.Printf("Database by thomas.cherry@gmail.com\n")
+    fmt.Printf("Manage table data with optional form display.\n")
+    fmt.Printf("\nNote: Arguments with ? are optional\n\n")
+
+    format := "%4s %-14s %-14s %-40s\n"
+
+    forty := strings.Repeat("-",40)
+    fmt.Printf(format, "Flag", "Long", "Arguments", "Description")
+    fmt.Printf(format,"----","------------","------------",forty)
+    fmt.Printf(format, "c", "create", "name value", "create a name and value")
+    fmt.Printf(format, "r", "read", "name", "read a named value")
+    fmt.Printf(format, "u", "update", "name value", "update a named value")
+    fmt.Printf(format, "d", "delete", "name", "delete a named value")
+    fmt.Printf(format, "", "", "", "")
+
+    fmt.Printf(format, "", "dump", "", "return current JSON")
+    fmt.Printf(format, "e", "echo", "text", "echo out text")
+    fmt.Printf(format, "h", "help", "", "Display this help")
+    fmt.Printf(format, "l", "list", "", "List table")
+    fmt.Printf(format, "", "ls", "", "List table")
+    fmt.Printf(format, "L", "load", "file", "load new active file")
+    fmt.Printf(format, "q", "quit", "", "quit application")
+    fmt.Printf(format, "", "exit", "", "quit application")
+    fmt.Printf(format, "S", "save", "", "Save active file")
+    fmt.Printf(format, "t", "table", "", "display output as a table")
+}
+
+/**
+Takes a raw command which may contain multiple instructions and break them up
+into single commands which can be processed by ProcessLine()
+*/
+func ProcessManyLines(raw_line string, data map[string]interface{}) {
+    if 0<len(raw_line) {
+        commands := strings.Split(raw_line, ";")
+        for _, raw_command := range commands {
+            command := strings.Trim(raw_command, " ")
+            if 0<len(command) {
+                ProcessLine(command, data)
+            }
+        }
+    }
+}
+
+/**
+Take a raw string which may contain a command and execute it
+*/
 func ProcessLine(raw string, data map[string]interface{}) {
     list := strings.Split(raw, " ")
     command := list[0]
     args := list[1:]
     switch command {
-        case "q", "quit", "exit":
-            if app_data.verbose { fmt.Printf("getting out of here\n") }
+            case "q", "quit", "exit":
+            v("getting out of here\n")
             os.Exit(0)
         case "e", "echo":
-            fmt.Printf("%s => %s\n", command, strings.Join(args, ",") )
+            fmt.Printf("%s\n", strings.Join(args, ",") )
         
         case "c", "create":
             Create(data, args[0], strings.Join(args[1:], " ") )
@@ -297,25 +414,42 @@ func ProcessLine(raw string, data map[string]interface{}) {
         case "d", "delete":
             Delete(data, args[0])
         
-        case "l", "list":
+        case "add":
+            Math(data, args[0], func(left float64, right float64) float64 {
+                return left + right
+            })
+
+        case "sub":
+            Math(data, args[0], func(left float64, right float64) float64 {
+                return left - right
+            })
+
+        case "dump":
+            Dump(data)
+        case "l", "ls", "list":
             List(data)
+        case "L", "load":
+            app_data.active_file = args[0]
+            data := Load(app_data.active_file)
+            app_data.data = data
         
         case "t", "table":
-            Table()
-        case "sub":
-            Sub()
-        case "s", "save":
+            Table(data)
+        case "S", "save":
             Save(data, app_data.active_file)
+        case "h", "help":
+            Help()
+        default:
+            Help()
     }
 }
 
 // #mark
 func main() {
-    //backlogCommand := flag.String("load", "ps -ef | grep java", "command to generate work")
-    //backlogCommand := flag.String("load", "ps -ef", "command to generate work")
-    //workerCommand := flag.String("work", "echo %s", "command to work off the load")
     verbose := flag.Bool("verbose", false, "verbose")
-    file_name := flag.String("file", "data.json", "data file")
+    file_name := flag.String("file", "db.json", "data file")
+    help_flag := flag.Bool("manual", false, "Display help")
+    command := flag.String("command", "", "Command to run")
     flag.Parse()
 
     app_data.verbose = *verbose
@@ -327,11 +461,20 @@ func main() {
     line := liner.NewLiner()
     defer line.Close()
     setup_liner(line)
-    
+
     //h := int(getHeight())
     //w := int(getWidth())
     
-    if app_data.verbose { List(data) }
-    InteractiveAdvance(line, data)
-    if app_data.verbose { List(data) }
+    if *help_flag {
+        Help()
+        return
+    }
+
+    if *command == "" {
+        if app_data.verbose { List(data) }
+        InteractiveAdvance(line, data)
+        if app_data.verbose { List(data) }
+    } else {
+        ProcessManyLines(*command, data)
+    }
 }

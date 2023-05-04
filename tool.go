@@ -1,3 +1,6 @@
+//forget exactly what this was going to be, I think it was going to be a batch
+// command executor
+
 package main
 
 import ("fmt"
@@ -209,9 +212,23 @@ func GetInput() string {
     buf := bufio.NewReader(os.Stdin)
     fmt.Print("> ")
     sentence, err := buf.ReadBytes('\n')
+    
     if err != nil {
         fmt.Println(err)
     } else {
+
+        if string(sentence) == "\x1b[11~" {
+            fmt.Println ("found f1")
+        }
+
+        if string(sentence) == "\x1b[OP" {
+            fmt.Println ("found F1")
+        }
+        
+        if strings.ContainsRune(string(sentence), 0xF1) {
+            fmt.Println ("conains F1")
+        }
+
         out = string(sentence)
     }
     return out

@@ -3,11 +3,18 @@ A collection of command line tools written in Go
 
 * console - get the size of a console
 * counter - count up or down with big numbers
+* date-math - find difference between two dates
+* db - simple name/value storage
+* db2 - complex data storage with forms ; in progress
 * iif - inline if for scripting
-* roll - rotate files like logs
+* isodate - current date in iso format because date stinks
+* md2html - template based HTML generator from markdown source
+* roll - rotate files like logs ; in progress
 * rpn - an RPN calculator
-* scale - console line chart scroler
+* scale - console line chart scroler ; experimental
+* smatrix - like cmatrix but a little basic ; experimental
 * striper - remove spaces from lines or words
+* thru - Marshal-Unmarshal example
 
 ## Details ##
 

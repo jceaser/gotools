@@ -160,7 +160,7 @@ const (
     ERR_MSG_FORM_RENAME = "form-rename <name> <src> <dest>\n"
 )
 
-// #mark - utility functions
+//MARK - Console functions
 
 /** print only in verbose mode */
 func v(format string, args ...string) {
@@ -255,6 +255,8 @@ func ScrRestore() {
     PrintCtrOnErr(ESC_RESTORE_CURSOR)
     PrintCtrOnErr(ESC_RESTORE_SCREEN)
 }
+
+//MARK - utility functions
 
 /**
 Run the external 'rpn' command

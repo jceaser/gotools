@@ -1,3 +1,5 @@
+// This command will report on the width and/or hight of the console
+
 package main
 
 import (
@@ -48,15 +50,16 @@ func GetHeight() uint {
 // MARK: - Application
 
 func main() {
-    heightMode := flag.Bool("height", false, "height mode")
-    widthMode := flag.Bool("width", false, "width mode")
+    heightMode := flag.Bool("height", false, "Height mode")
+    widthMode := flag.Bool("width", false, "Width mode")
+    adjust := flag.Int("adjust", 0, "Value to add to height or width")
     
     flag.Parse()
     
     if *heightMode {
-        fmt.Printf("%d\n", GetHeight())
+        fmt.Printf("%d\n", GetHeight() + uint(*adjust))
     } else if *widthMode {
-        fmt.Printf("%d\n", GetWidth())
+        fmt.Printf("%d\n", GetWidth() + uint(*adjust))
     } else {
         fmt.Printf("%dx%d\n", GetWidth(), GetHeight())
     }

@@ -23,8 +23,11 @@ _testmain.go
 *.test
 *.prof
 
+*.linux
+color
 console
 counter
+date-math
 db
 db2
 iif
@@ -33,5 +36,6 @@ md2html
 roll
 rpn
 scale
+smatrix
 striper
 thru

@@ -18,6 +18,7 @@ import (
     "gitlab.com/golang-commonmark/markdown"
     "io"
     "io/ioutil"
+    "log"
     "math/rand"
     "os"
     "path/filepath"
@@ -36,33 +37,96 @@ const FILE_TEMPLATE = `
 <!DOCTYPE html>
 <html>
 <head>
+	<meta charset="UTF-8" />
 	<title>{{if .Title }} {{ .Title }} {{end}}</title>
 	<meta name="generator" content="md2html" />
 </head>
 <body>
-	<div id="content">
+    <section id="header">{{if .Title }} {{ .Title }} {{end}}</header>
+	<section id="content">
 		{{if .Content}} {{ .Content }} {{end}}
-	</div>
+	</section>
 	<hr>
-	<div id="footer">
-		{{if .Date}}<span id="generated">{{ .Date }}</span>{{end}}
-	</div>
+	<section id="footer">
+		{{if .DateWithTime}}
+		<span id="generated">{{ .DateWithTime }}</span>
+		{{end}}
+	</section>
 </body>
 </html>
 `
 
+type ExitCode int
+
+const (
+    ExitOkay int = iota
+    ExitBadTemplate
+    ExitBadLimit
+    ExitErrorWorkingDir
+    ExitUnkownTimezone
+)
+
 /* ************************************************************************** */
 // MARK: - Data Types
 
+//loggers
+type LogType struct {
+    Error *log.Logger
+    Warn *log.Logger
+    Info *log.Logger
+    Debug *log.Logger
+    Stats *log.Logger
+}
+
+var Log LogType
+
+func init() {
+    file := os.Stderr
+    settings := log.Ldate|log.Ltime|log.Lshortfile
+    Log = LogType{
+        Error: log.New(file, "ERROR: ", settings),
+        Warn: log.New(file, "WARNING: ", settings),
+        Info: log.New(ioutil.Discard, "INFO: ", settings),
+        Debug: log.New(ioutil.Discard, "DEBUG: ", settings),
+        Stats: log.New(ioutil.Discard, "", settings)}
+}
+
+func (self *LogType) EnableInfo() {
+    self.Info.SetOutput(os.Stderr)
+}
+
+func (self *LogType) EnableDebug() {
+    self.Debug.SetOutput(os.Stderr)
+}
+
+func (self *LogType) EnableStats(file *os.File) {
+    self.Stats.SetOutput(file)
+}
+
+/* ********************************** */
+// MARK: -
+
 /** App Data holding the current state of the application */
 type AppData struct {
-    Markdown bool
+    MarkdownOff *bool
+    Location *string
     TimeZone int
-    Date string
-    Template string
+    //Date string
+    Template *string
     Verbose *bool
-    Limit int
-    WalkTree *bool
+    Limit *int
+    UserMessageOne *string
+    UserMessageTwo *string
+}
+
+func (self AppData) Now() time.Time {
+    loc, e := time.LoadLocation(*self.Location)
+    if e!=nil {
+        fmt.Println(e)
+        os.Exit(ExitUnkownTimezone)
+    }
+    now := time.Now().In(loc)
+    return now
 }
 
 /* ********************************** */
@@ -77,7 +141,12 @@ type TemplateData struct {
     SafeTitle string
     Content string
     Date string
+    Time string
+    DateWithTime string
     Path string
+    UserMessageOne string
+    UserMessageTwo string
+    burned BurnList
 }
 
 // tests if a path exists
@@ -90,6 +159,8 @@ func (td TemplateData) Exists(path string) bool {
 
 // Return a random resource
 func (td TemplateData) Random(fileName string) string {
+
+    //construct full path to resources
     filePath := fileName
     if len(td.Path) > 0 {
         filePath = fmt.Sprintf("%s/%s", td.Path, fileName)
@@ -101,7 +172,7 @@ func (td TemplateData) Random(fileName string) string {
     //get all the objects in a directory
     rawEntries, err := os.ReadDir(filePath)
     if err != nil {
-        fmt.Println(os.Stderr, err)
+        Log.Warn.Printf("%s - %s: %v", td.Title,  filePath, err)
         return ""
     }
 
@@ -115,15 +186,20 @@ func (td TemplateData) Random(fileName string) string {
     }
 
     //find resource to return
-    index := burned.NotRepeated(len(entries))
+    index := td.burned.NotRepeated(len(entries))
+    if index > len(entries) || index < 0 {
+        return ""
+    }
     entry := entries[index]
 
-    //solve for base directory
+    /*
+    //remove base directory
     base := filepath.Dir(filePath)
     if strings.HasPrefix(base, "/") {
         //absolute path, strip it out
         base = strings.Replace(base, td.Path, "", -1)
     }
+    */
     path := fmt.Sprintf("%s/%s", fileName, entry.Name())
 
     return path
@@ -138,8 +214,20 @@ func (td TemplateData) Import(fileName string) string {
     if len(filePath) < 1 {
         return ""
     }
+
     content := readFile(filePath)
-    content = render(content, td)//allow for template execution
+    content_title := ""
+    //look for an H1 title, break it out for use in the HTML title tag
+    first_newline := strings.Index(content, "\n")
+    if first_newline > -1{
+        if strings.HasPrefix(content[0:first_newline], "# ") {
+            content_title = content[2:first_newline]
+            content = content[first_newline:]
+        }
+    }
+    td.Title = content_title
+
+    content = Render(content, td)//allow for template execution
     result := MarkdownToHTML(content)
     return result
 }
@@ -147,11 +235,16 @@ func (td TemplateData) Import(fileName string) string {
 /* ********************************** */
 // MARK: -
 
-type BurnList map[int]bool
+/*
+Burn List maintains a list of numbers which have been used up. For cases where
+random numbers are to be used just once. A Map is used instead of a List for
+faster lookup.
+*/
+type BurnList map[int]int
 
 // Record a number as being used
-func (self BurnList) Burn(num int) {
-    self[num] = true
+func (self *BurnList) Burn(num int) {
+    (*self)[num] = len(*self)
 }
 
 // Number has not been used yet
@@ -171,27 +264,32 @@ func (self BurnList) Burned(num int) bool {
 }
 
 // Try numbers till one of them is found to have not been used
-func (self BurnList) NotRepeated(max int) int {
-    var index int
-    if len(self) >= max {
+func (self *BurnList) NotRepeated(max int) int {
+    if len(*self) >= max {
         //everything burned, allow repeats
-        index = int(rand.Int31n(int32(max)))
+        //index = int(rand.Int31n(int32(max)))
+        return -1
     } else {
-        for {
-            posible := rand.Int31n(int32(max))
-            if burned.Available(int(posible)) {
-                index = int(posible)
-                burned.Burn(index)
-                break
+        //try randomly, but don't try forever
+        limit := max * 2
+        for limit > 0 {
+            limit = limit - 1
+            posible := int(rand.Int31n(int32(max)))
+            if self.Available(posible) {
+                self.Burn(posible)
+                return posible
+            }
+        }
+        //try the hard way
+        for i := 0 ; i < max; i++ {
+            if self.Available(i) {
+                self.Burn(i)
+                return i
             }
         }
     }
-    return int(index)
+    return -1
 }
-
-var (
-    burned = BurnList{}
-)
 
 /* ************************************************************************** */
 // MARK: - Util functions
@@ -204,7 +302,7 @@ func writeFile(file string, content string) {
     d1 := []byte(content)
     err := ioutil.WriteFile(file, d1, 0644)
     if err!=nil {
-        os.Stderr.WriteString(err.Error() + "\n")
+        Log.Warn.Printf("%v", err.Error())
     }
 }
 
@@ -217,7 +315,7 @@ Not tested!
 func readFile(file_path string) string {
     content, err := ioutil.ReadFile(file_path)
     if err != nil {
-        os.Stderr.WriteString(err.Error() + "\n")
+        Log.Warn.Printf("%v", err.Error())
         return ""
     }
     return string(content)
@@ -238,10 +336,19 @@ func ReaderToString(reader io.Reader) string {
     buf := new(strings.Builder)
     _, err := io.Copy(buf, reader)
     if err!=nil {
-        os.Stderr.WriteString(err.Error() + "\n")
+        Log.Warn.Printf("%v", err.Error())
     }
     output := buf.String()
     return output
+}
+
+func TimeStart() int64 {
+    return time.Now().UnixMicro()
+}
+
+func TimeLog(who string, start int64) {
+    stop := TimeStart()
+    Log.Stats.Printf("%s took %d μs", who, stop-start)
 }
 
 /* ************************************************************************** */
@@ -253,8 +360,10 @@ not tested
 @return html
 */
 func MarkdownToHTML(input string) string {
+    start := TimeStart()
     md := markdown.New(markdown.HTML(true), markdown.Typographer(false))
     output := md.RenderToString([]byte(input))
+    TimeLog("MarkdownToHTML", start)
     return output
 }
 
@@ -267,8 +376,8 @@ from where the app lives
 func WorkingDirectory() (string, int) {
     working_directory, err := os.Getwd()
     if err != nil {
-        os.Stderr.WriteString(err.Error() + "\n")
-        os.Exit(1)
+        Log.Error.Printf("%v", err.Error())
+        os.Exit(ExitErrorWorkingDir)
     }
     directories := strings.Split(working_directory, "/")
     return working_directory, len(directories)-1
@@ -305,15 +414,18 @@ Populate a template with data
 @param data values to populate in template
 @return resulting output of executing the template
 */
-func render(template_content string, data TemplateData) string {
+func Render(template_content string, data TemplateData) string {
+    start := TimeStart()
+    defer TimeLog("Render", start)
+
     temp, err := template.New("html").Parse(template_content)
     if err!=nil {
-        os.Stderr.WriteString(err.Error() + "\n")
+        Log.Warn.Printf("%v", err.Error())
     } else {
         buf := new(strings.Builder)
         err = temp.Execute(buf, data)
         if err!=nil {
-            os.Stderr.WriteString(err.Error() + "\n")
+            Log.Warn.Printf("%v", err.Error())
         }
         output := buf.String()
         return output
@@ -323,9 +435,10 @@ func render(template_content string, data TemplateData) string {
 
 //walk a tree of directories converting files from md to html
 func WalkTree(appData AppData) {
+
     current, err := os.Getwd()
     if err != nil {
-        fmt.Println(os.Stderr, err)
+        Log.Error.Printf("%v", err.Error())
         return
     }
 
@@ -335,6 +448,7 @@ func WalkTree(appData AppData) {
     wg.Wait()
 }
 
+//recursive function to process a directory
 func WalkTreeFromPath(wg *sync.WaitGroup,
         appData AppData,
         path,
@@ -342,7 +456,7 @@ func WalkTreeFromPath(wg *sync.WaitGroup,
     defer wg.Done()
     entries, err := os.ReadDir(path)
     if err != nil {
-        fmt.Println(os.Stderr, err)
+        Log.Error.Printf("%v", err.Error())
         return
     }
     markdownFiles := []string{}
@@ -355,21 +469,23 @@ func WalkTreeFromPath(wg *sync.WaitGroup,
             } else if strings.HasSuffix(e.Name(), ".md") {
                 filePath := fmt.Sprintf("%s/%s", path, e.Name())
                 markdownFiles = append(markdownFiles, filePath)
-            } else if e.Name() == appData.Template {
+            } else if e.Name() == *appData.Template {
                 //if a template is found, overwrite the current template
                 template = fmt.Sprintf("%s/%s", path, e.Name())
             }
         }
     }
 
+    //appData.Template = &template
+
     if len(template) < 1 {
-        fmt.Println(os.Stderr, "No template found")
+        Log.Warn.Printf("No template found")
         return
     }
     //sort.Strings(markdownFiles)
     for _, mdFile := range markdownFiles {
         wg.Add(1)
-        go ProcessMarkdownThread(mdFile, template, wg)
+        go ProcessMarkdownThread(wg, appData, mdFile, template)
     }
     //sort.Strings(dirList)
     for _, dir := range dirList {
@@ -378,16 +494,14 @@ func WalkTreeFromPath(wg *sync.WaitGroup,
     }
 }
 
-func ProcessMarkdownThread(src, template string, wg *sync.WaitGroup) {
+//process a single file
+func ProcessMarkdownThread(wg *sync.WaitGroup, appData AppData, src, template string) {
+    start := TimeStart()
+    defer TimeLog("ProcessMarkdownThread", start)
     dest := src[0:len(src)-3] + ".html"
     srcReader := strings.NewReader(readFile(src))
-    appData := AppData{
-        TimeZone: -4,
-        Template: template,
-        Markdown: true,
-        Limit: 3,
-    }
-    content := work(srcReader, appData)
+    appData.Template = &template
+    content := work(srcReader, &appData)
     writeFile(dest, content)
     defer wg.Done()
 }
@@ -399,22 +513,32 @@ func ProcessMarkdownThread(src, template string, wg *sync.WaitGroup) {
 Take a reader and the current application configuration and process a markdown
 file using a template as a wrapper.
 */
-func work(reader io.Reader, app_data AppData) string {
+func work(reader io.Reader, app_data *AppData) string {
+    start := TimeStart()
+    defer TimeLog("work", start)
     content_markdown := ReaderToString(reader)
     content_title := ""
 
+    //setup basic template data
     data := TemplateData{}
+    data.burned = BurnList{}
+    data.Content = ""
+
+    data.UserMessageOne = *app_data.UserMessageOne
+    data.UserMessageTwo = *app_data.UserMessageTwo
 
     //set up reporting time/date
-    now := time.Now()
-    formated_date := now.Format("2006-01-02 03:04 PM")
+    now := app_data.Now()
+    data.Date = now.Format("2006-01-02")
+    data.Time = now.Format("03:04 PM")
+    data.DateWithTime = now.Format("2006-01-02 03:04 PM")
 
     //get template file
     template_file_path := ""
-    if strings.HasPrefix(app_data.Template, "/") {
-        template_file_path = app_data.Template
+    if strings.HasPrefix(*app_data.Template, "/") {
+        template_file_path = *app_data.Template
     } else {
-        template_file_path = FindTemplate(app_data.Template, app_data.Limit)
+        template_file_path = FindTemplate(*app_data.Template, *app_data.Limit)
     }
     var template_content string
     if template_file_path == "" {
@@ -433,50 +557,40 @@ func work(reader io.Reader, app_data AppData) string {
             content_markdown = content_markdown[first_newline:]
         }
     }
+    data.Title = content_title
 
     re := regexp.MustCompile(`[^\w]`)
     cleanTitle := re.ReplaceAll(
         []byte(strings.ToLower(content_title)),
         []byte("_"))
+    data.SafeTitle = string(cleanTitle)
 
     //get the content
     var content_html string
-    if app_data.Markdown {
-        td := TemplateData{}
-        td.Path = data.Path
-        td.Title = content_title
-        td.SafeTitle = string(cleanTitle)
-        td.Content = ""
-        td.Date = formated_date
-        content_markdown = render(content_markdown, td)
-        content_html = MarkdownToHTML(content_markdown)
-    } else {
+    if *app_data.MarkdownOff {
         content_html = content_markdown
+    } else {
+        content_markdown = Render(content_markdown, data)
+        content_html = MarkdownToHTML(content_markdown)
     }
 
-    //expose data to template
-    data.Title = content_title
-    data.SafeTitle = string(cleanTitle)
     data.Content = content_html
-    data.Date = formated_date
 
-    return render(template_content, data)
+    return Render(template_content, data)
 }
 
 /** Assign defaults to an AppData structure */
-func InitApp(now time.Time) AppData {
-    year := now.Year()
-    month := int(now.Month())
-    day := now.Day()
-
-    date := fmt.Sprintf("%d-%d-%d", year, month, day)
-
+func InitApp() AppData {
+    defTemplate := "index.thtml"
+    defLimit := 3
+    defMdOff := false
+    loc := "UTC"
     appData := AppData{
-        TimeZone: -4,
-        Date: date,
-        Template: "index.thtml",
-        Markdown: true,
-        Limit: 3,
+        TimeZone: 0,
+        Location: &loc,
+        Template: &defTemplate,
+        MarkdownOff: &defMdOff,
+        Limit: &defLimit,
     }
     return appData
 }
@@ -489,9 +603,38 @@ func HelpMessageCallback() {
     flag.PrintDefaults()
 }
 
+// Validate the flag values
+func processFlags(appData *AppData) {
+    if len(*appData.Template) < 1 {
+        fmt.Println("invalid template name")
+        os.Exit(ExitBadTemplate)
+    }
+    if *appData.Limit < 0 || 99 < *appData.Limit {
+        fmt.Println("invalid search limit")
+        os.Exit(ExitBadLimit)
+    }
+    if len(*appData.Location) < 1 {
+        *appData.Location = "UTC"
+    }
+}
+
+func SetStatsLog(path string) os.File {
+    var stream os.File
+    if len(path) > 0 {
+        stream, err := os.OpenFile(path,
+            os.O_APPEND | os.O_WRONLY | os.O_CREATE,
+            0644)
+        if err != nil {
+            Log.Error.Printf("Error opening stat log: %v", err)
+        }
+        Log.EnableStats(stream)
+    }
+    return stream
+}
+
 /** command line interface */
 func main() {
-    appData := InitApp(time.Now())
+    appData := InitApp()
 
 	//overwrite the usage function
     flag.Usage = HelpMessageCallback
@@ -499,38 +642,74 @@ func main() {
     //process command line arguments
     appData.Verbose = flag.Bool("verbose", false,
         "send more text to Standard Error")
-    template := flag.String("template", "index.thtml", "look for Template File")
-    search_limit := flag.Int("limit", 3,
+    appData.Template = flag.String("template", "index.thtml",
+        "look for Template File")
+    appData.Limit = flag.Int("limit", 3,
         "Limit the number of parent directories that can be searched")
-    no_html := flag.Bool("no-html", false, "Do not convert markdown to HTML")
-    write_template := flag.Bool("write-template", false,
-        "save the template and exit")
-    markdown_only := flag.Bool("markdown", false, "Only convert input")
-    appData.WalkTree = flag.Bool("walk-tree", false,
-        "Walk a tree applying conversions")
+    appData.MarkdownOff = flag.Bool("no-markdown", false,
+        "Do not convert markdown to HTML")
+    appData.UserMessageOne = flag.String("user-message-one", "",
+        "A user defined message which can be included in templates")
+    appData.UserMessageTwo = flag.String("user-message-two", "",
+        "A user defined message which can be included in templates")
+
+    appData.Location = flag.String("time-zone", "UTC",
+        "EST, " +
+        "America/Chicago, " +
+        "America/Denver, " +
+        "America/Los_Angeles, " +
+        "UTC")
+
+    statLog := flag.String("stats-file", "",
+        "Path to the file where stats are to be saved")
+
+    modeWalkTree := flag.Bool("walk-tree", false,
+        "MODE: Walk a tree applying conversions and exit")
+    modeMarkdownOnly := flag.Bool("markdown", false,
+        "MODE: Only convert input and exit")
+    modeWriteTemplate := flag.Bool("write-template", false,
+        "MODE: save the template and exit")
 
     flag.Parse()
 
-    if *write_template {
-        writeFile("template.html", FILE_TEMPLATE)
-        os.Exit(0)
+    //setup the stats log
+    if len(*statLog) > 0 {
+        switch *statLog {
+        case "out":
+            Log.EnableStats(os.Stdout)
+        case "err":
+            Log.EnableStats(os.Stderr)
+        default:
+            statFile := SetStatsLog(*statLog)
+            defer statFile.Close()
+        }
     }
 
-    if len(*template) > 0 { appData.Template = *template }
-	if *no_html {appData.Markdown = false}
-	if 0 < *search_limit && * search_limit < 99 {appData.Limit = *search_limit}
+    processFlags(&appData)
 
     //run things
-    if *appData.WalkTree {
+    if *modeWriteTemplate {
+        writeFile("template.html", FILE_TEMPLATE)
+        return
+    }
+
+    if *modeWalkTree {
         WalkTree(appData)
         return
     }
 
     reader := bufio.NewReader(os.Stdin)
-    if *markdown_only {
+    if *modeMarkdownOnly {
         markdown := ReaderToString(reader)
-        MarkdownToHTML(markdown)
-    } else {
-        fmt.Println(work (reader, appData))
+        out := MarkdownToHTML(markdown)
+        fmt.Println(out)
+        return
+    }
+
+    //default action
+    {
+        out := work(reader, &appData)
+        fmt.Println(out)
+        return
     }
 }

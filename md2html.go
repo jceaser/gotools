@@ -56,6 +56,16 @@ const FILE_TEMPLATE = `
 </html>
 `
 
+const EVENT_ARTICLE = `
+<!-- article start -->
+<article class="blog_item">
+    <div class="content">
+        %s
+    </div>
+</article>
+<!-- article end -->
+`
+
 type ExitCode int
 
 const (
@@ -117,6 +127,7 @@ type AppData struct {
     Limit *int
     UserMessageOne *string
     UserMessageTwo *string
+    Name *string
 }
 
 func (self AppData) Now() time.Time {
@@ -147,6 +158,18 @@ type TemplateData struct {
     UserMessageOne string
     UserMessageTwo string
     burned BurnList
+    Name string
+}
+
+
+
+// tests if a path exists
+func (td TemplateData) HasTitle(title string) bool {
+    return td.Title == title
+}
+
+func (td TemplateData) NameIs(name string) bool {
+    return td.Name == name
 }
 
 // tests if a path exists
@@ -207,6 +230,28 @@ func (td TemplateData) Random(fileName string) string {
 
 // Allow templates to load other templates
 func (td TemplateData) Import(fileName string) string {
+    dirPath := fmt.Sprintf("%s/%s", td.Path, fileName)
+    if DirectoryExists(dirPath) {
+        entries, err := os.ReadDir(dirPath)
+        if err != nil {
+            Log.Error.Println(err)
+            return "error in directory"
+        }
+        out := ""
+        for _, e := range entries {
+            if e.Name()[len(e.Name())-3:] == ".md" {
+                //subFile := fmt.Sprintf("%s/%s", td.Path, e.Name())
+                subFile := e.Name()
+                subPath := fmt.Sprintf("%s/%s/%s", td.Path, fileName, subFile)
+
+                content := readFile(subPath)
+                content = Render(content, td)
+                result := MarkdownToHTML(content)
+                out = out + "\n" + fmt.Sprintf(EVENT_ARTICLE, result)
+            }
+        }
+        return out
+    }
     filePath := fileName
     if len(td.Path) > 0 {
         filePath = fmt.Sprintf("%s/%s", td.Path, fileName)
@@ -329,6 +374,13 @@ Test if a file exists
 func FileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
 	return err==nil
+}
+
+func DirectoryExists(path string) bool {
+    if stat, err := os.Stat(path); err == nil && stat.IsDir() {
+        return true
+    }
+    return false
 }
 
 /** convert a reader to a string */
@@ -476,21 +528,19 @@ func WalkTreeFromPath(wg *sync.WaitGroup,
         }
     }
 
-    //appData.Template = &template
-
     if len(template) < 1 {
         Log.Warn.Printf("No template found")
         return
-    }
-    //sort.Strings(markdownFiles)
-    for _, mdFile := range markdownFiles {
-        wg.Add(1)
-        go ProcessMarkdownThread(wg, appData, mdFile, template)
     }
     //sort.Strings(dirList)
     for _, dir := range dirList {
         wg.Add(1)
         go WalkTreeFromPath(wg, appData, dir, template)
+    }
+    //sort.Strings(markdownFiles)
+    for _, mdFile := range markdownFiles {
+        wg.Add(1)
+        go ProcessMarkdownThread(wg, appData, mdFile, template)
     }
 }
 
@@ -523,6 +573,10 @@ func work(reader io.Reader, app_data *AppData) string {
     data := TemplateData{}
     data.burned = BurnList{}
     data.Content = ""
+
+    if 0<len(*app_data.Name) {
+        data.Name = *app_data.Name
+    }
 
     data.UserMessageOne = *app_data.UserMessageOne
     data.UserMessageTwo = *app_data.UserMessageTwo
@@ -652,6 +706,7 @@ func main() {
         "A user defined message which can be included in templates")
     appData.UserMessageTwo = flag.String("user-message-two", "",
         "A user defined message which can be included in templates")
+    appData.Name = flag.String("name", "", "Name of the file being streamed in")
 
     appData.Location = flag.String("time-zone", "UTC",
         "EST, " +

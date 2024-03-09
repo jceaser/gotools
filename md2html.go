@@ -27,6 +27,7 @@ import (
     "sync"
     "text/template"
     "time"
+    //"reflect"
     )
 
 /* ************************************************************************** */
@@ -61,6 +62,11 @@ const EVENT_ARTICLE = `
 <article class="blog_item">
     <div class="content">
         %s
+    </div>
+    <div class="tools">
+        <span>%s</span>
+        <img class="qrcode" src="%s" alt="qrcode" title="QR Code">
+        <a class="direct" href="%s"><i class="fas fa-link"></i></a>
     </div>
 </article>
 <!-- article end -->
@@ -159,13 +165,26 @@ type TemplateData struct {
     UserMessageTwo string
     burned BurnList
     Name string
+    QrCode string
+    Url string
 }
 
+func (self TemplateData) Has(sub string) bool {
+    dir := filepath.Dir(fmt.Sprintf("%s/%s", self.Path, self.Name))
+    return FileExists(fmt.Sprintf("%s/%s", dir, sub))
+}
 
+func (self TemplateData) Dump() string {
+    return fmt.Sprintf("%v", self)
+}
 
 // tests if a path exists
 func (td TemplateData) HasTitle(title string) bool {
     return td.Title == title
+}
+
+func (td TemplateData) NameHasSuffix(name string) bool {
+    return strings.HasSuffix(td.Name,  name)
 }
 
 func (td TemplateData) NameIs(name string) bool {
@@ -228,9 +247,20 @@ func (td TemplateData) Random(fileName string) string {
     return path
 }
 
-// Allow templates to load other templates
+/*
+Allow templates to load other templates
+fileName is the directory to look into
+*/
 func (td TemplateData) Import(fileName string) string {
-    dirPath := fmt.Sprintf("%s/%s", td.Path, fileName)
+    //td.path is full base path
+    //td.Name is relative calling page
+    //fileName is requested path to include
+
+    dir := filepath.Dir(td.Name)
+    //base := filepath.Base(td.Name)
+
+    dirPath := fmt.Sprintf("%s/%s", dir, fileName)
+
     if DirectoryExists(dirPath) {
         entries, err := os.ReadDir(dirPath)
         if err != nil {
@@ -240,14 +270,25 @@ func (td TemplateData) Import(fileName string) string {
         out := ""
         for _, e := range entries {
             if e.Name()[len(e.Name())-3:] == ".md" {
-                //subFile := fmt.Sprintf("%s/%s", td.Path, e.Name())
-                subFile := e.Name()
-                subPath := fmt.Sprintf("%s/%s/%s", td.Path, fileName, subFile)
+                justName := e.Name()[0:len(e.Name())-3]
+                srcPath := fmt.Sprintf("%s/%s.md", fileName, justName)
+                destPath := fmt.Sprintf("/%s/%s.html", dirPath, justName)
+                localPath := fmt.Sprintf("%s/%s.html", fileName, justName)
+
+                subPath := fmt.Sprintf("%s/%s/%s", td.Path, dir, srcPath)
+
+                td.Url = localPath
+                td.QrCode = fmt.Sprintf("/cgi-bin/qrc.cgi?size=100&path=%s",
+                    destPath)
 
                 content := readFile(subPath)
                 content = Render(content, td)
                 result := MarkdownToHTML(content)
-                out = out + "\n" + fmt.Sprintf(EVENT_ARTICLE, result)
+                out = out + "\n" + fmt.Sprintf(EVENT_ARTICLE,
+                    result,
+                    "",
+                    td.QrCode,
+                    localPath)
             }
         }
         return out
@@ -577,6 +618,8 @@ func work(reader io.Reader, app_data *AppData) string {
     if 0<len(*app_data.Name) {
         data.Name = *app_data.Name
     }
+
+    data.Url = *app_data.Name
 
     data.UserMessageOne = *app_data.UserMessageOne
     data.UserMessageTwo = *app_data.UserMessageTwo

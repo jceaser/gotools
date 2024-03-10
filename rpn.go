@@ -336,7 +336,7 @@ func ProcessLine(formula string, verbose bool) {
         }
     }
 
-    fmt.Println(labels)
+    //fmt.Println(labels)
 
     for pc := 0 ; pc <= len(commands)-1; pc++ {
         segment := commands[pc]

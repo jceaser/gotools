@@ -328,7 +328,7 @@ func ProcessLine(formula string, verbose bool) {
     labels := make(map[int]int)
     commands := split_on_spaces(formula)
 
-    for lc := 0 ; lc <= len(commands)-1; lc {
+    for lc := 0 ; lc <= len(commands)-1; lc++ {
         segment := commands[lc]
         cmd := segment
         if cmd=="lbl" {

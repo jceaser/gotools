@@ -2,7 +2,7 @@ package main
 
 import ("fmt"
     "os"
-    "reflect"
+    //"reflect"
     "bufio"
     "errors"
     "io/ioutil"
@@ -32,9 +32,10 @@ type func_data struct {
 var (
     history_fn = filepath.Join(os.TempDir(), ".rpn_history")    //used by liner
     names      = []string{"print", "dump", "quit"}              //used by liner
-    
+
     active_stack int
     stack [][]float64
+    lastx float64
     memory = make(map[string]float64)
     modes = make(map[string]interface{})
     actions = make(map[string]func_data)
@@ -100,6 +101,7 @@ func InitializeActions() {
     a("ln10", Ln10, "Decimal expansion of natural logarithm of 10")
     a("everything", Everything, "Answer to Everything")
     a("sol", func(){Push(299792458)}, "Speed of Light")
+    a("lastx", func(){Push(lastx)}, "Last X value")
 
     // unary actions
     a("drop", Drop, "Remove the top item from the stack")
@@ -108,8 +110,8 @@ func InitializeActions() {
     a("++", Increment, "add one to the top of the stack")
     a("^2", Square, "square the item at the top of the stack")
     a("rand", Random, "Generates a random number from 0-1")
-    a("integer", Truncate, "Return the integer part of the number")
-    a("decimal", Exponent, "Return the decimal part of the number");
+    a("int", Truncate, "Return the integer part of the number")
+    a("frac", Exponent, "Return the decimal part of the number");
     a("!", Factorial, "Factorial")
     a("rad", Rad, "Decimal to Radians")
     a("sin", Sin, "Sine of the radian")
@@ -123,9 +125,10 @@ func InitializeActions() {
     a("|", Or, "OR values")
     a("+", Plus, "add two numbers")
     a("-", Minus, "subtract two numbers")
+    a("–", ReverseMinus, "subtract in reverse")
     a("*", Times, "multiply two numbers")
-    a("\\", ReverseDivide, "divide two numbers, but reversed")
     a("/", Divide, "divide two numbers")
+    a("\\", ReverseDivide, "divide two numbers, but reversed")
     a("%", Remainder, "divide two numbers return only the remainder")
     a("^", Power, "take the power of two numbers first^second")
     a("min", Min, "return the smaller of two numbers")
@@ -182,7 +185,7 @@ func main() {
     formula := flag.String("formula", "print",
         "math formula in RPN format, interpreted before stream")
     file := flag.String("file", "", "print out function manual")
-    
+
     interactive := flag.Bool("interactive", false,
         "interactive mode using a readline style interface")
     verbose := flag.Bool("verbose", false, "verbose")
@@ -190,14 +193,14 @@ func main() {
         "output a final pop")
     show_fish := flag.Bool("_completion", false, "shell completion help")
     manual := flag.Bool("manual", false, "print out function manual")
-    
+
     flag.Parse()
 
     if *show_fish {
         fish()
          os.Exit(0)
     }
-    
+
     if 0<len(*file) {
         _, error := os.Stat(*file)
         if !errors.Is(error, os.ErrNotExist) {
@@ -240,7 +243,7 @@ func main() {
 }
 
 /**
-run the interactive mode using the third party readline library. Help the 
+run the interactive mode using the third party readline library. Help the
 library stor history, take each line and send it to ProcessLine()
 */
 func InteractiveAdvance(line *liner.State, verbose *bool) {
@@ -266,7 +269,7 @@ func InteractiveAdvance(line *liner.State, verbose *bool) {
 }
 
 /**
-this is a fall back method in case it is decided to not use a third party 
+this is a fall back method in case it is decided to not use a third party
 interface
 */
 func InteractiveBasic(verbose *bool) {
@@ -324,6 +327,17 @@ process a formula line
 func ProcessLine(formula string, verbose bool) {
     labels := make(map[int]int)
     commands := split_on_spaces(formula)
+
+    for lc := 0 ; lc <= len(commands)-1; lc {
+        segment := commands[lc]
+        cmd := segment
+        if cmd=="lbl" {
+            labels[int(Peek())] = lc
+        }
+    }
+
+    fmt.Println(labels)
+
     for pc := 0 ; pc <= len(commands)-1; pc++ {
         segment := commands[pc]
         cmd := segment
@@ -384,12 +398,14 @@ Perform a single action/operation. Either store a value or operate on it
 func Action (segment string, verbose bool) {
     value, err := strconv.ParseFloat(segment, 64)
     if err==nil {
+        //must be a number, put it on the stack
         Push(value)
     } else {
+        //it is a command
         foo := actions[segment].cmd
         doc := actions[segment].doc
-        
-        fmt.Println("foo = ", reflect.ValueOf(foo).Kind())
+
+        //fmt.Println("foo = ", reflect.ValueOf(foo).Kind())
 
         if verbose && len(doc)>0 {
             fmt.Printf("%s\n", doc)
@@ -526,11 +542,12 @@ func PrintV() {
         v := stack[active_stack][i]
         fmt.Printf("%d: %v\n", l-i-1, v)
     }
+    fmt.Printf("%v\n", lastx)
 }
 
 func Help() {
     fmt.Printf("%s\n", strings.Repeat("*", 80) )
-    
+
     keys := make( []string, 0 )
     for k := range actions {
         keys = append(keys, k)
@@ -572,7 +589,7 @@ func PrintStacks() {
     fmt.Printf("%v\n", stack)
 }
 
-// system functions 
+// system functions
 
 func Exit(){
     os.Exit(0)
@@ -609,62 +626,82 @@ func IfOver() {
 func And() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push(float64(int(left)&int(right)))
 }
 func Or() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push(float64(int(left)|int(right)))
 }
 func Xor() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push(float64(int(left)^int(right)))
 }
 func Plus() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push(left+right)
 }
 func Minus() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push(left-right)
 }
+
+func ReverseMinus() {
+    left := Pop()
+    right := Pop()
+    lastx = left
+    Push(left-right)
+}
+
 func Times() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push(left*right)
 }
 func Divide() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push(left/right)
 }
 func ReverseDivide() {
     left := Pop()
     right := Pop()
+    lastx = right
     Push(left/right)
 }
 func Power() {
     power := Pop()
     base := Pop()
+    lastx = power
     Push( math.Pow(base,power) )
 }
 func Min() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push( math.Min(left,right) )
 }
 func Max() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push( math.Max(left,right) )
 }
 
 func Remainder() {
     right := Pop()
     left := Pop()
+    lastx = right
     Push( math.Remainder(left,right) )
 }
 
@@ -694,11 +731,16 @@ func Pord() {
     Pop()
 }
 
-func SquareRoot() {Push( math.Sqrt(Pop()) )}
+func SquareRoot() {
+    x := Pop()
+    lastx = x
+    Push( math.Sqrt(x) )
+}
 
 func Square() {
     power := 2.0
     base := Pop()
+    lastx = power
     Push( math.Pow(base,power) )
 }
 
@@ -706,11 +748,13 @@ func Round() {Push( math.Round(Pop()) )}
 
 func Increment() {
     value := Pop()
+    lastx = value
     Push(value + 1)
 }
 
 func Decrement() {
     value := Pop()
+    lastx = value
     Push(value - 1)
 }
 

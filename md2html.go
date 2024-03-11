@@ -134,6 +134,7 @@ type AppData struct {
     UserMessageOne *string
     UserMessageTwo *string
     Name *string
+
 }
 
 func (self AppData) Now() time.Time {
@@ -164,13 +165,34 @@ type TemplateData struct {
     UserMessageOne string
     UserMessageTwo string
     burned BurnList
-    Name string
+    FileName string
     QrCode string
     Url string
 }
 
+func (self TemplateData) HasStyle() bool {
+    l := len(self.FileName)
+    if 0<l {
+        withoutExtention := self.FileName[0:l-3]
+        styleSheet := withoutExtention + ".css"
+        return FileExists(styleSheet)
+    }
+    return false
+}
+
+func (self TemplateData) Style() string {
+    l := len(self.FileName)
+    if 0<l {
+        withoutExtention := self.FileName[0:l-3]
+        styleSheet := withoutExtention + ".css"
+        return styleSheet
+    }
+    return ""
+}
+
+
 func (self TemplateData) Has(sub string) bool {
-    dir := filepath.Dir(fmt.Sprintf("%s/%s", self.Path, self.Name))
+    dir := filepath.Dir(fmt.Sprintf("%s/%s", self.Path, self.FileName))
     return FileExists(fmt.Sprintf("%s/%s", dir, sub))
 }
 
@@ -184,11 +206,11 @@ func (td TemplateData) HasTitle(title string) bool {
 }
 
 func (td TemplateData) NameHasSuffix(name string) bool {
-    return strings.HasSuffix(td.Name,  name)
+    return strings.HasSuffix(td.FileName,  name)
 }
 
 func (td TemplateData) NameIs(name string) bool {
-    return td.Name == name
+    return td.FileName == name
 }
 
 // tests if a path exists
@@ -256,8 +278,8 @@ func (td TemplateData) Import(fileName string) string {
     //td.Name is relative calling page
     //fileName is requested path to include
 
-    dir := filepath.Dir(td.Name)
-    //base := filepath.Base(td.Name)
+    dir := filepath.Dir(td.FileName)
+    //base := filepath.Base(td.FileName)
 
     dirPath := fmt.Sprintf("%s/%s", dir, fileName)
 
@@ -616,7 +638,7 @@ func work(reader io.Reader, app_data *AppData) string {
     data.Content = ""
 
     if 0<len(*app_data.Name) {
-        data.Name = *app_data.Name
+        data.FileName = *app_data.Name
     }
 
     data.Url = *app_data.Name

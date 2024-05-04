@@ -6,9 +6,11 @@ A collection of command line tools written in Go
 * date-math - find difference between two dates
 * db - simple name/value storage
 * db2 - complex data storage with forms ; in progress
+* filter - filter out matching lines from regexp
 * iif - inline if for scripting
 * isodate - current date in iso format because date stinks
 * md2html - template based HTML generator from markdown source
+* params - a tool for processing url parameters and parts
 * roll - rotate files like logs ; in progress
 * rpn - an RPN calculator
 * scale - console line chart scroler ; experimental
@@ -23,7 +25,7 @@ Inline If
 returns a value if the left and right operands meet a condition
 
 Usage:
-    iff -left 10 -test '==' -right 10    
+    iff -left 10 -test '==' -right 10
 
 ### rpn ###
 A Reverse Polish Notation calculator

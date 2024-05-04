@@ -60,9 +60,9 @@ requested format
 @param format to display
 */
 func Action (format string) {
-    now := NowByFormat (format)
+    selectedFormat := NowByFormat (format)
     vf("%s = ", format)
-    fmt.Println(Now().Format(now))
+    fmt.Println(Now().Format(selectedFormat))
 }
 
 /**
@@ -134,10 +134,10 @@ func NowByFormat(format string) string{
 }
 
 func Now() time.Time {
-    if (&test_now == nil ) {
-        return time.Now()
-    } else {
+    if test_now.Year() != 1 {
         return test_now
+    } else {
+        return time.Now()
     }
 }
 

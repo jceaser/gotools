@@ -35,7 +35,7 @@ func TestMedian(t *testing.T) {
     data := []interface{}{1.0,2.0,3.0,4.0,5.0,6.0}
     ans := Median(data)
     pline(t, 3.5, ans, "Median does not %f, got %f")
-    
+
     data = []interface{}{1.0,2.0,3.0}
     ans = Median(data)
     pline(t, 2.0, ans, "Median does not equal %f, got %f")
@@ -49,20 +49,20 @@ func TestMode(t *testing.T) {
 
 func TestConvert(t *testing.T) {
     //var data interface{}
-    
+
     var f64 float64
     f64 = 3.145920
     ans := interface_to_string(f64)
     sline(t, "3.145920", ans, "Float64 to string does not equal %s from %s.")
-    
+
     var f32 float32
     f32 = 3.145920
     ans = interface_to_string(f32)
     sline(t, "3.145920", ans, "Float32 to string does not equal %s from %s.")
-    
+
     ans = interface_to_string(3.145920)
     sline(t, "3.145920", ans, "Float to string does not equal %s from %s.")
-    
+
     ans = interface_to_string(1)
     sline(t, "1", ans, "Int to string does not equal %s from '%s'.")
 
@@ -77,6 +77,20 @@ func TestFloatConvert(t *testing.T) {
     ans = interface_to_float("3.14592")
     pline(t, 0.0, ans, "String test %f from %f.")
 
+}
+
+func TestInitDataBase(t *testing.T) {
+    data := InitDataBase()
+    msg := "init here"
+
+    expected := []string{"foo", "bar", "foobar", "row"}
+    actual := data.Forms["main"]
+
+    for idx := 0; idx < len(actual); idx++ {
+        if expected[idx] != actual[idx] {
+            t.Errorf("%s, %v==%v\n", msg, expected, actual)
+        }
+    }
 }
 
 /*
@@ -137,14 +151,14 @@ func TestCommands(t *testing.T) {
 
     //ProcessManyLines("c name 0 ; u name \"test\"", app_data.data)
     ProcessManyLines("create name", app_data.data)
-    
+
     expected1 := []string {"0.000000","0.000000","0.000000"}
     b1 := interface_to_string(data.Columns["name"][0])
     f1 := interface_to_string(data.Columns["name"][1])
     r1 := interface_to_string(data.Columns["name"][2])
     ans1 := []string{b1,f1,r1}
     check_three(t, expected1, ans1, "cmd test - create - %s != expected[%d]=%s")
-    
+
     ProcessManyLines("update name 1 10 ; update name 2 test", app_data.data)
 
     expected := []string {"0.000000","10.000000","test"}
@@ -153,7 +167,7 @@ func TestCommands(t *testing.T) {
     r := interface_to_string(data.Columns["name"][2])
     ans := []string{b,f,r}
     check_three(t, expected, ans, "cmd test - update - %s != expected[%d]=%s")
-    
+
 }
 
 /**************************************/
@@ -176,12 +190,14 @@ func check_three(t *testing.T, expected []string, ans []string, msg string) {
     }
 }
 
+/* String compair test */
 func sline(t *testing.T, expected string, ans string, msg string) {
     if ans!=expected {
        t.Errorf(msg + "\n", expected, ans)
     }
 }
 
+/* Float compair test */
 func pline(t *testing.T, expected float64, ans float64, msg string) {
     if ans!=expected {
        t.Errorf(msg + "\n", expected, ans)

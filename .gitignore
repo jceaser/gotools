@@ -23,15 +23,21 @@ _testmain.go
 *.test
 *.prof
 
+*.linux
+color
 console
 counter
+date-math
 db
 db2
+filter
 iif
 isodate
 md2html
+params
 roll
 rpn
 scale
+smatrix
 striper
 thru

@@ -213,6 +213,16 @@ func (td TemplateData) NameIs(name string) bool {
     return td.FileName == name
 }
 
+// return true if document has content of any kind
+func (self TemplateData) HasContent(path string) bool {
+    if self.Exists(path) {
+        if 0 < len(strings.TrimSpace(self.Import(path))) {
+            return true
+        }
+    }
+    return false
+}
+
 // tests if a path exists
 func (td TemplateData) Exists(path string) bool {
     if FileExists(td.Path + "/" + path) {

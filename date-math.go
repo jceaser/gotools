@@ -21,7 +21,7 @@ Converts a formated string to a time structure
 */
 func StringToTime(format string, input string) time.Time {
     if len(format)<1 {
-        format = "2006-01-02T15:04:05"
+        format = "2006-01-02T15:04:05-07:00"
     }
     parseTime, err := time.Parse(format, input)
     if err != nil {
@@ -31,7 +31,7 @@ func StringToTime(format string, input string) time.Time {
             fmt.Println(err)
         }
     }
-    
+
     return parseTime
 }
 
@@ -66,7 +66,7 @@ func main() {
     flag.Usage = HelpMessageCallback
 
     //process command line arguments
-    format := flag.String("format", "2006-01-02T15:04:05",
+    format := flag.String("format", "2006-01-02T15:04:05-07:00",
         "Golang date/time format")
     older := flag.String("old", "",
         "oldest date/time in 2006-01-02T15:04:05 format")
@@ -84,7 +84,7 @@ func main() {
     flag.Parse()
 
     working := time.Now()
-    
+
     if *date!="" {
         working = StringToTime(*format, *date)
     } else if *newer!="" && *older!=""{
@@ -92,7 +92,7 @@ func main() {
         n := StringToTime(*format, *newer)
         o := StringToTime(*format, *older)
         dur := n.Sub(o)
-        
+
         d := int(dur.Hours()/24)
         h := int(dur.Hours() - float64(d*24))
         m := int(dur.Minutes() - float64(d*24*60) - float64(h*60))
@@ -107,10 +107,10 @@ func main() {
     } else if *older!="" {
         working = StringToTime(*format, *older)
     }
-    
+
     orig := working
 
-    if *years!=0 {working = working.AddDate(*years, 0, 0)} 
+    if *years!=0 {working = working.AddDate(*years, 0, 0)}
     if *months!=0 {working = working.AddDate(0, *months, 0)}
     if *days!=0 {working = working.AddDate(0, 0, *days)}
     working = Add(working, *hours, time.Hour)

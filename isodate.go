@@ -41,7 +41,7 @@ func main() {
     dump := flag.Bool("dump", false, "dump all dates in all formats with names")
     format := flag.String("format", "iso", "defaults to ISO, format to output")
     verbose = flag.Bool("verbose", false, "verbose")
-    
+
     flag.Parse()
 
     if *dump {
@@ -73,7 +73,7 @@ func Dump() {
     DumpLine("iso")
 
     vln("\nDump of all other formats")
-    
+
     DumpLine("1123")
     DumpLine("1123z")
     DumpLine("3339")
@@ -119,7 +119,8 @@ func NowByFormat(format string) string{
 		case "850"          : now = time.RFC850
 		case "1123"         : now = time.RFC1123
 		case "1123z"        : now = time.RFC1123Z
-        case "iso", "3339"  : now = time.RFC3339
+        case "iso"          : now = "2006-01-02T15:04:05-07:00"
+        case "3339"         : now = time.RFC3339
 		case "3339nano"     : now = time.RFC3339Nano
 		case "kitchen"      : now = time.Kitchen
 
@@ -127,7 +128,7 @@ func NowByFormat(format string) string{
 		case "milli"        : now = time.StampMilli
 		case "micro"        : now = time.StampMicro
 		case "nano"         : now = time.StampNano
- 
+
         default:     now = time.RFC3339
     }
     return now

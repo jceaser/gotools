@@ -26,9 +26,12 @@ func StringToTime(format string, input string) time.Time {
     parseTime, err := time.Parse(format, input)
     if err != nil {
         os.Stderr.WriteString(err.Error() + "\n")
-        parseTime, err = time.Parse("2006-01-02", input)
+        parseTime, err = time.Parse(time.RFC3339, input)
         if err != nil {
-            fmt.Println(err)
+            parseTime, err = time.Parse("2006-01-02", input)
+            if err != nil {
+                fmt.Println(err)
+            }
         }
     }
 

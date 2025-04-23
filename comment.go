@@ -1,5 +1,9 @@
 package main
 
+/***************************************************************************************************
+follow up the command with a call to column -t -s $'\t'
+***************************************************************************************************/
+
 import (
 	"bytes"
     "flag"
@@ -11,19 +15,33 @@ import (
 	"encoding/json"
 )
 
+var Author = "thomas.cherry@gmail.com"
+
+/************************************************/
+// MARK: Structs
+
+// Application context, setup for the current instance
+type AppContext struct {
+    Directory *string
+    Tag *string
+}
+
+// Shorthand for reading in a json array of strings.
 type StringArrayWrapper struct {
 	Values []string `json:"-"`
 }
 
-// Custom unmarshaler
+// Custom unmarshaler for the json string array
 func (s *StringArrayWrapper) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, &s.Values)
 }
 
+// Simple function to dump out the values of the array
 func (s StringArrayWrapper) Dump() string {
     return strings.Join(s.Values, ", ")
 }
 
+// Pretty print out the values of the array
 func (s StringArrayWrapper) String() string {
 	var cleaned []string
 	for _, val := range s.Values {
@@ -34,6 +52,10 @@ func (s StringArrayWrapper) String() string {
 	return strings.Join(cleaned, ", ")
 }
 
+/************************************************/
+// MARK: - Functions
+
+// Read in an array of raw bytes and turn them into a StringArrayWrapper
 func GetStringArrayWrapper(data []byte) StringArrayWrapper {
     var wrapper StringArrayWrapper
 	if err := json.Unmarshal([]byte(data), &wrapper); err != nil {
@@ -42,6 +64,7 @@ func GetStringArrayWrapper(data []byte) StringArrayWrapper {
 	return wrapper
 }
 
+// Return the comment from a given file. If no comment exists, return empty string
 func getFinderComment(filePath string) (string, error) {
 	cmd := exec.Command("xattr", "-p", "com.apple.metadata:kMDItemFinderComment", filePath)
 	output, err := cmd.Output()
@@ -72,6 +95,7 @@ func getFinderComment(filePath string) (string, error) {
         plutil -convert json -o - -
 */
 
+// Return a string with the list of tags for a given file. Return empty string of none are found
 func getFinderTag(filePath string) (string, error) {
 
     full_cmd := fmt.Sprintf(
@@ -105,13 +129,19 @@ func getFinderTag(filePath string) (string, error) {
 	return comment, nil
 }
 
-type AppContext struct {
-    Directory *string
-    Tag *string
-}
+/**************************************************************************************************/
+// MARK: - Application
 
 func SetupApp() AppContext {
     cxt := AppContext{}
+
+    flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Comment by %s:\n", Author)
+		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
+		flag.PrintDefaults()
+		fmt.Fprintln(os.Stderr, "\nExample:")
+		fmt.Fprintf(os.Stderr, "%s -tag green | column -t -s $'\t'", os.Args[0])
+	}
 
     cxt.Directory = flag.String("path", ".", "Path to scan")
     cxt.Tag = flag.String("tag", "", "Tags to search for")
@@ -121,6 +151,7 @@ func SetupApp() AppContext {
 }
 
 func main() {
+	cxt := SetupApp()
 	// Get the current working directory
 	currentDir, err := os.Getwd()
 	if err != nil {
@@ -128,7 +159,6 @@ func main() {
 		return
 	}
 
-	cxt := SetupApp()
 	if len(*cxt.Directory)>0 && *cxt.Directory != "." {
 
     	absPath, err := filepath.Abs(*cxt.Directory)
@@ -145,26 +175,32 @@ func main() {
 		return
 	}
 
+	fmt.Printf("%1s\t%1s\t%1s\n", "File", "Tags", "Comment")
+
 	// Iterate through each file
 	for _, file := range files {
 		filePath := filepath.Join(currentDir, file.Name())
+
+        //get tags
+		tags, err := getFinderTag(filePath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Tag Error\n")
+			tags = ""
+		}
+
+        //get comment
 		comment, err := getFinderComment(filePath)
 		if err != nil {
-			fmt.Printf("Error getting comment for %s: %v\n", file.Name(), err)
-			continue
+			fmt.Fprintf(os.Stderr, "Error getting comment for %s: %v\n", file.Name(), err)
+			comment = ""
 		}
 
-		if comment != "" {
-			fmt.Printf("%s\t%s\t%s\n", file.Name(), "comment", comment)
+		// nothing to see, move on
+		if len(comment)<1 && len(tags)<1 {
+		    continue
 		}
-
-		flag, err := getFinderTag(filePath)
-		if err != nil {
-			fmt.Printf("Tag Error\n")
-			continue
-		}
-		if flag != "" {
-			fmt.Printf("%s\t%s\t%s\n", file.Name(), "tag", flag)
+        if  *cxt.Tag=="" || strings.Contains(strings.ToLower(tags), strings.ToLower(*cxt.Tag)) {
+			fmt.Printf("%1s\t%1s\t%1s\n", file.Name(), tags, comment)
 		}
 	}
 }

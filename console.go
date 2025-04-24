@@ -12,7 +12,7 @@ import (
 /******************************************************************************/
 // MARK: Structures
 
-type winsize struct {
+type win_size struct {
     Row    uint16
     Col    uint16
     Xpixel uint16
@@ -23,7 +23,7 @@ type winsize struct {
 // MARK: - Functions
 
 func GetWidth() int {
-    ws := &winsize{}
+    ws := &win_size{}
     retCode, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
         uintptr(syscall.Stdin),
         uintptr(syscall.TIOCGWINSZ),
@@ -35,7 +35,7 @@ func GetWidth() int {
 }
 
 func GetHeight() int {
-    ws := &winsize{}
+    ws := &win_size{}
     retCode, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
         uintptr(syscall.Stdin),
         uintptr(syscall.TIOCGWINSZ),
@@ -46,7 +46,7 @@ func GetHeight() int {
     return int(ws.Row)
 }
 
-func Max(left, right int) int {
+func MaxInt(left, right int) int {
     if left<right {
         return right
     }
@@ -64,10 +64,12 @@ func main() {
     flag.Parse()
 
     if *heightMode {
-        fmt.Printf("%d\n", GetHeight() + uint(*adjust))
+        fmt.Printf("%d\n", MaxInt(0, GetHeight() + *adjust))
     } else if *widthMode {
-        fmt.Printf("%d\n", GetWidth() + uint(*adjust))
+        fmt.Printf("%d\n", MaxInt(0, GetWidth() + *adjust))
     } else {
-        fmt.Printf("%dx%d\n", GetWidth(), Max(0, GetHeight()+*offset))
+        fmt.Printf("%dx%d\n",
+            MaxInt(0, GetWidth() + *adjust),
+            MaxInt(0, GetHeight() + *adjust))
     }
 }

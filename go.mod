@@ -1,6 +1,6 @@
 module github.com/jceaser/gotools
 
-go 1.17
+go 1.18
 
 require github.com/peterh/liner v1.2.1
 

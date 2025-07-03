@@ -280,6 +280,67 @@ func (td TemplateData) Random(fileName string) string {
 }
 
 /*
+Allow templates to load a list of documents from a directory
+fileName is the directory to look into
+*/
+func (td TemplateData) List(fileName string, title string) string {
+    //td.path is full base path
+    //td.Name is relative calling page
+    //fileName is requested path to include
+
+    dir := filepath.Dir(td.FileName)
+    //base := filepath.Base(td.FileName)
+
+    dirPath := fmt.Sprintf("%s/%s", dir, fileName)
+    if string(fileName[0]) == "/" {
+        dirPath = fileName[1:]
+    }
+
+    if DirectoryExists(dirPath) {
+        entries, err := os.ReadDir(dirPath)
+        if err != nil {
+            Log.Error.Println(err)
+            return "error in directory"
+        }
+        out := title + "\n"
+        for _, e := range entries {
+            if e.Name()[len(e.Name())-3:] == ".md" {
+                justName := e.Name()[0:len(e.Name())-3]
+
+                srcPath := fmt.Sprintf("%s/%s.md", fileName, justName)
+                destPath := fmt.Sprintf("/%s/%s.html", dirPath, justName)
+                localPath := fmt.Sprintf("%s/%s.html", fileName, justName)
+
+                subPath := fmt.Sprintf("%s/%s/%s", td.Path, dir, srcPath)
+
+                td.Url = localPath
+                td.QrCode = fmt.Sprintf("/cgi-bin/qrc.cgi?size=100&path=%s",
+                    destPath)
+
+                content := readFile(subPath)
+
+                firstLine := getFirstLine(content)
+                if strings.HasPrefix(firstLine, "##") {
+                    justName = fmt.Sprintf("%s", firstLine[2:])
+                }
+
+                //content = Render(content, td)
+                //result := MarkdownToHTML(content)
+                out = out + fmt.Sprintf("* [%s](%s)\n",
+                    justName, destPath)
+            }
+        }
+
+        content := Render(out, td)
+        result := MarkdownToHTML(content)
+
+        return result
+    }
+    return ""
+}
+
+
+/*
 Allow templates to load other templates
 fileName is the directory to look into
 */
@@ -411,6 +472,18 @@ func (self *BurnList) NotRepeated(max int) int {
 
 /* ************************************************************************** */
 // MARK: - Util functions
+
+func getFirstLine(input string) string {
+    lines := strings.SplitN(input, "\n", 8)
+
+    for i := range lines {
+        text := strings.TrimSpace(lines[i])
+        if len(text)>1 {
+            return text
+        }
+    }
+    return ""
+}
 
 /**
 Util Function Write a file

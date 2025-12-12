@@ -22,14 +22,19 @@ _testmain.go
 *.exe
 *.test
 *.prof
+*.log
+*.swp
 
 *.linux
 color
+comment
+cprintf
 console
 counter
 date-math
 db
 db2
+holocene
 filter
 iif
 isodate
@@ -37,7 +42,11 @@ md2html
 params
 roll
 rpn
+rss2json
 scale
+shoot
 smatrix
 striper
 thru
+timeline
+

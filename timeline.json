@@ -1,0 +1,17 @@
+{
+    "Title": "Ancient Egypt Timeline",
+    "Nodes": [
+        {"Start": -3150, "End":-2686, "Label": "Early Dynastic"},
+        {"Start": -2686, "End": -2181, "Label": "Old Kingdom"},
+        {"Start": -2181, "End": -2061, "Label": "First Intermediate"},
+        {"Start": -2061, "End": -1649, "Label": "Middle Kingdom"},
+        {"Start": -1705, "End": -1549, "Label": "Second Intermediate"},
+        {"Start": -1549, "End": -1077, "Label": "New Kingdom"},
+        {"Start": -1069, "End": -653, "Label": "Third Intermediate"},
+        {"Start": -672, "End": -332, "Label": "Late Period"},
+        {"Start": -332, "End": -30, "Label": "Hellenistic Egypt"},
+        {"Start": -30, "End": 313, "Label": "Roman Egypt"},
+
+        {"Mark": true, "Now": true}
+    ]
+}

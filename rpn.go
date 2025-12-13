@@ -112,6 +112,7 @@ func InitializeActions() {
 	a("--", Decrement, "subtract one from the top of the stack")
 	a("++", Increment, "add one to the top of the stack")
 	a("^2", Square, "square the item at the top of the stack")
+	a("round", Round, "round the number at the top of the stack")
 	a("rand", Random, "Generates a random number from 0-1")
 	a("int", Truncate, "Return the integer part of the number")
 	a("frac", Exponent, "Return the decimal part of the number")
@@ -256,7 +257,7 @@ run the interactive mode using the third party readline library. Help the
 library stor history, take each line and send it to ProcessLine()
 */
 func InteractiveAdvance(line *liner.State, verbose *bool) {
-	fmt.Printf("RPN Calculator by thomas.cherry@gmail.com\n")
+	fmt.Printf("RPN Calculator by\nthomas.cherry@gmail.com\n")
 	for {
 		if name, err := line.Prompt(">"); err == nil {
 			input := strings.Trim(name, " ") //clean it

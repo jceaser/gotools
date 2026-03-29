@@ -8,6 +8,7 @@ import ("fmt"
     "flag"
     "syscall"
     "unsafe"
+    "strings"
     )
 
 /****/
@@ -32,6 +33,16 @@ func getWidth() uint {
 }
 /****/
 
+type appdata struct {
+    streamMode bool
+    lineMode bool
+    edgeMode bool
+    firstMode int
+    lastMode int
+    trimLeft bool
+    trimRight bool
+    all bool
+}
 
 /**
 pull each line and process
@@ -50,34 +61,78 @@ func ReadLines(reader io.Reader, foo func(string) string) string {
     return buffer.String()
 }
 
-func main() {
-    //args := os.Args
+func main() {   
+    app_data := appdata{}
     
-    lineMode := flag.Bool("line", false, "line mode, trim each line")
+    streamMode := flag.Bool("stream", true, "steam mode, read and process each line and dump to stream")
+    lineMode := flag.Bool("line", false, "line mode, process each line separately")
     edgeMode := flag.Bool("edge", false, "edge mode, trim just edges")
-    //allMode := flag.Bool("all", false, "all mode, trim everything")
-    //otherMode := flag.Bool("other", false, "other mode, TBD")
+    firstMode := flag.Int("first", -1, "trim the first few charactors")
+    lastMode := flag.Int("last", -1, "trim the last few charactors")
+    trimLeft := flag.Bool("left", false, "trim leading spaces")
+    trimRight := flag.Bool("right", false, "trim trailing spaces")
+    all := flag.Bool("all", false, "remove all spaces")
     
     flag.Parse()
+
+    app_data = appdata{
+        streamMode: *streamMode,
+        lineMode: *lineMode,
+        edgeMode: *edgeMode,
+        firstMode: *firstMode,
+        lastMode: *lastMode,
+        trimLeft: *trimLeft,
+        trimRight: *trimRight,
+        all: *all}
     
-    if *lineMode {//each line gets trimmed, you get a trim, you get a trim
-        str := ReadLines(os.Stdin, sansSpace)
-        fmt.Printf("%s", str)
-    } else if *edgeMode {//only first and last
+    if *streamMode {
+        buf := bufio.NewReader(os.Stdin)
+        bytelist, err := buf.ReadBytes('\n')
+        for err == nil {
+            line := string(bytelist)
+            fmt.Printf("%s\n", workOnLine(line, app_data))
+            bytelist, err = buf.ReadBytes('\n')
+        }
+    } else if *lineMode {
         str := ReadLines(os.Stdin, pass)
-        fmt.Printf("%s", string(bytes.TrimSpace([]byte(str))))
-    } /*else if *otherMode {
-        str := ReadLines(os.Stdin, all)
-        fmt.Printf("%s", string(bytes.TrimSpace([]byte(str))))
-    }*/
+        scanner := bufio.NewScanner(strings.NewReader(str))
+        output := ""
+        for scanner.Scan() {
+            line := scanner.Text()
+            output = output + "\n" + workOnLine(line, app_data)
+        }
+        fmt.Printf("%s", output)
+    } else {
+        str := ReadLines(os.Stdin, pass)
+        str = workOnLine(str, app_data)
+        fmt.Printf("%s", str)
+    }
+}
+
+func workOnLine(line string, data appdata) string {
+    if data.all {
+        line = strings.ReplaceAll(line, " ", "")
+        line = strings.ReplaceAll(line, "\t", "")
+    } else {
+        //outer-space prefix in-space <whats-left> in-space postfix outer-space
+
+        //remove outer-space
+        if data.trimLeft {line = strings.TrimLeft(line, " \t")}
+        if data.trimRight {line = strings.TrimRight(line, " \t\n")}
+        
+        //remove pre/post fix
+        if data.firstMode != -1 {line = cutLeft(line, data.firstMode)}
+        if data.lastMode != -1 {line = cutRight(line, data.lastMode)}
+        
+        //trim what is left
+        if data.edgeMode {line = sansSpace(line)}
+        
+        //whats-left is all there is
+    }
+    return line
 }
 
 func pass(line string) string{return line}
-
-func sansSpace(line string) string{
-    return string(bytes.TrimSpace([]byte(line))) + "\n"
-}
-
-func all(line string) string{
-    return string(bytes.TrimSpace([]byte(line)))
-}
+func cutLeft(line string, count int) string {return line[count:]}
+func cutRight(line string, count int) string {return line[0:len(line)-(1+count)]}
+func sansSpace(line string) string{return string(bytes.TrimSpace([]byte(line)))}

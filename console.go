@@ -12,7 +12,7 @@ import (
 /******************************************************************************/
 // MARK: Structures
 
-type winsize struct {
+type win_size struct {
     Row    uint16
     Col    uint16
     Xpixel uint16
@@ -22,8 +22,8 @@ type winsize struct {
 /******************************************************************************/
 // MARK: - Functions
 
-func GetWidth() uint {
-    ws := &winsize{}
+func GetWidth() int {
+    ws := &win_size{}
     retCode, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
         uintptr(syscall.Stdin),
         uintptr(syscall.TIOCGWINSZ),
@@ -31,11 +31,11 @@ func GetWidth() uint {
     if int(retCode) == -1 {
         panic(errno)
     }
-    return uint(ws.Col)
+    return int(ws.Col)
 }
 
-func GetHeight() uint {
-    ws := &winsize{}
+func GetHeight() int {
+    ws := &win_size{}
     retCode, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
         uintptr(syscall.Stdin),
         uintptr(syscall.TIOCGWINSZ),
@@ -43,7 +43,14 @@ func GetHeight() uint {
     if int(retCode) == -1 {
         panic(errno)
     }
-    return uint(ws.Row)
+    return int(ws.Row)
+}
+
+func MaxInt(left, right int) int {
+    if left<right {
+        return right
+    }
+    return left
 }
 
 /******************************************************************************/
@@ -53,14 +60,16 @@ func main() {
     heightMode := flag.Bool("height", false, "Height mode")
     widthMode := flag.Bool("width", false, "Width mode")
     adjust := flag.Int("adjust", 0, "Value to add to height or width")
-    
+
     flag.Parse()
-    
+
     if *heightMode {
-        fmt.Printf("%d\n", GetHeight() + uint(*adjust))
+        fmt.Printf("%d\n", MaxInt(0, GetHeight() + *adjust))
     } else if *widthMode {
-        fmt.Printf("%d\n", GetWidth() + uint(*adjust))
+        fmt.Printf("%d\n", MaxInt(0, GetWidth() + *adjust))
     } else {
-        fmt.Printf("%dx%d\n", GetWidth(), GetHeight())
+        fmt.Printf("%dx%d\n",
+            MaxInt(0, GetWidth() + *adjust),
+            MaxInt(0, GetHeight() + *adjust))
     }
 }
